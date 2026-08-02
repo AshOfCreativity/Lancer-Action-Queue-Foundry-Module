@@ -1,0 +1,124 @@
+<div class="action-queue">
+
+  {{!-- COMBATANTS --}}
+  <aside class="aq-combatants">
+    <h2>{{localize "ACTIONQUEUE.Combatants.Title"}}</h2>
+    {{#if hasCombat}}
+      {{#each combatantSections}}
+        <div class="aq-combatant-section">
+          <div class="aq-combatant-section-label">{{this.label}}</div>
+          {{#each this.items}}
+            <div class="aq-combatant {{#if this.selected}}selected{{/if}} {{#if this.defeated}}defeated{{/if}} {{#if this.active}}active{{/if}}"
+                 data-combatant-id="{{this.id}}">
+              <img class="aq-combatant-portrait" src="{{this.img}}" alt="{{this.name}}"/>
+              <span class="aq-combatant-name">{{this.name}}</span>
+              {{#if this.queueCount}}
+                <span class="aq-combatant-queue-count">{{this.queueCount}}</span>
+              {{/if}}
+            </div>
+          {{/each}}
+        </div>
+      {{else}}
+        <p class="aq-palette-empty">{{localize "ACTIONQUEUE.Combatants.None"}}</p>
+      {{/each}}
+    {{else}}
+      <p class="aq-palette-empty">{{localize "ACTIONQUEUE.Combatants.None"}}</p>
+    {{/if}}
+  </aside>
+
+  {{!-- PALETTE --}}
+  <section class="aq-palette">
+    <h2>{{localize "ACTIONQUEUE.Palette.Title"}}</h2>
+    <div class="aq-palette-filter">
+      {{#each categoryFilters}}
+        <button type="button" class="aq-filter-btn {{#if this.active}}active{{/if}}" data-category="{{this.id}}">
+          {{this.label}}
+        </button>
+      {{/each}}
+    </div>
+    {{#if selectedCombatant}}
+      <div class="aq-palette-grid">
+        {{#each palette}}
+          <div class="aq-action-card" data-action-id="{{this.id}}">
+            <div class="aq-action-card-name"><i class="{{this.icon}}"></i> {{this.name}}</div>
+            <div class="aq-action-card-meta">
+              {{this.category}}{{#if this.isAttack}} · attack{{/if}}
+            </div>
+          </div>
+        {{else}}
+          <p class="aq-palette-empty">{{localize "ACTIONQUEUE.Palette.SelectCombatant"}}</p>
+        {{/each}}
+      </div>
+    {{else}}
+      <p class="aq-palette-empty">{{localize "ACTIONQUEUE.Palette.SelectCombatant"}}</p>
+    {{/if}}
+  </section>
+
+  {{!-- QUEUE --}}
+  <section class="aq-queue">
+    <div class="aq-queue-header">
+      <h2 style="flex:1">
+        {{localize "ACTIONQUEUE.Queue.Title"}}
+        {{#if selectedCombatant}}<span style="font-weight:400; color:#888;"> — {{selectedCombatant.name}}</span>{{/if}}
+      </h2>
+      <div class="aq-queue-actions">
+        {{#if selectedCombatant}}
+          {{#if selectedCombatant.canEdit}}
+            <button type="button" class="aq-btn aq-clear-btn">{{localize "ACTIONQUEUE.Queue.Clear"}}</button>
+            <button type="button" class="aq-btn aq-btn-primary aq-fire-btn">
+              <i class="fas fa-play"></i> {{localize "ACTIONQUEUE.Queue.Fire"}}
+            </button>
+          {{/if}}
+        {{/if}}
+      </div>
+    </div>
+
+    <div class="aq-queue-list">
+      {{#if queueIsEmpty}}
+        <div class="aq-queue-empty">{{localize "ACTIONQUEUE.Queue.Empty"}}</div>
+      {{else}}
+        {{#each queueItems}}
+          <div class="aq-queue-item {{this.status}}" data-item-id="{{this.id}}" draggable="true">
+            <div class="aq-queue-item-row">
+              <span class="aq-queue-item-handle" title="{{localize "ACTIONQUEUE.Queue.Reorder"}}">
+                <i class="fas fa-grip-vertical"></i>
+              </span>
+              <span><i class="{{this.actionIcon}}"></i></span>
+              <span class="aq-queue-item-name">{{this.actionName}}</span>
+              <div class="aq-queue-item-controls">
+                {{#if ../selectedCombatant.canEdit}}
+                  <button type="button" class="aq-icon-btn aq-toggle-status" data-item-id="{{this.id}}" title="{{this.statusLabel}}">
+                    <i class="fas {{#if this.isFired}}fa-undo{{else}}fa-check{{/if}}"></i>
+                  </button>
+                  <button type="button" class="aq-icon-btn aq-move-up" data-item-id="{{this.id}}" title="{{localize "ACTIONQUEUE.Queue.MoveUp"}}">
+                    <i class="fas fa-arrow-up"></i>
+                  </button>
+                  <button type="button" class="aq-icon-btn aq-move-down" data-item-id="{{this.id}}" title="{{localize "ACTIONQUEUE.Queue.MoveDown"}}">
+                    <i class="fas fa-arrow-down"></i>
+                  </button>
+                  <button type="button" class="aq-icon-btn aq-edit-item" data-item-id="{{this.id}}" title="{{localize "ACTIONQUEUE.Queue.Edit"}}">
+                    <i class="fas fa-edit"></i>
+                  </button>
+                  <button type="button" class="aq-icon-btn aq-remove-item" data-item-id="{{this.id}}" title="{{localize "ACTIONQUEUE.Queue.Remove"}}">
+                    <i class="fas fa-times"></i>
+                  </button>
+                {{/if}}
+              </div>
+            </div>
+            {{#if this.metaPills.length}}
+              <div class="aq-queue-item-meta">
+                {{#each this.metaPills}}
+                  <span class="aq-queue-item-meta-pill">{{this.label}}</span>
+                {{/each}}
+              </div>
+            {{/if}}
+            {{#if this.notes}}
+              <div class="aq-queue-item-notes">{{this.notes}}</div>
+            {{/if}}
+          </div>
+        {{/each}}
+      {{/if}}
+    </div>
+  </section>
+
+</div>

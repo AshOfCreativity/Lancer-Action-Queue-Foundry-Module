@@ -1,0 +1,43 @@
+{
+  "id": "lancer-action-queue",
+  "title": "LANCER Action Queue",
+  "description": "Queue multiple LANCER actions on a combatant and fire them as a batch — built for high-attack-count turns (Barrage, Death's Head, multi-skirmish combos) and for GMs running NPCs with several actions per turn.",
+  "version": "0.1.0",
+  "compatibility": {
+    "minimum": "11",
+    "verified": "12"
+  },
+  "authors": [
+    {
+      "name": "AshOfCreativity"
+    }
+  ],
+  "relationships": {
+    "systems": [
+      {
+        "id": "lancer",
+        "type": "system",
+        "compatibility": {
+          "minimum": "2.0.0"
+        }
+      }
+    ]
+  },
+  "esmodules": [
+    "scripts/main.mjs"
+  ],
+  "styles": [
+    "styles/action-queue.css"
+  ],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "lang/en.json"
+    }
+  ],
+  "socket": true,
+  "url": "https://github.com/AshOfCreativity/Lancer-Action-Queue-Foundry-Module",
+  "manifest": "https://raw.githubusercontent.com/AshOfCreativity/Lancer-Action-Queue-Foundry-Module/main/module.json",
+  "download": "https://github.com/AshOfCreativity/Lancer-Action-Queue-Foundry-Module/archive/refs/heads/main.zip"
+}

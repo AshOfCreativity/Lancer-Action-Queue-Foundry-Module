@@ -1,0 +1,89 @@
+{
+  "ACTIONQUEUE": {
+    "Title": "Action Queue",
+    "OpenButton": "Open Action Queue",
+    "Combatants": {
+      "Title": "Combatants",
+      "None": "No active combat",
+      "PlayerSection": "Players",
+      "NPCSection": "NPCs",
+      "DefeatedSection": "Defeated"
+    },
+    "Palette": {
+      "Title": "Add Action",
+      "SelectCombatant": "Select a combatant to start queuing actions",
+      "Categories": {
+        "all": "All",
+        "quick": "Quick",
+        "full": "Full",
+        "reaction": "Reaction",
+        "free": "Free",
+        "protocol": "Protocol",
+        "other": "Other"
+      }
+    },
+    "Queue": {
+      "Title": "Queue",
+      "Empty": "No actions queued. Click an action to add it.",
+      "Fire": "Fire Queue",
+      "Clear": "Clear",
+      "Remove": "Remove",
+      "Reorder": "Drag to reorder",
+      "MoveUp": "Move up",
+      "MoveDown": "Move down",
+      "Edit": "Edit",
+      "MarkDone": "Mark done",
+      "MarkPending": "Mark pending",
+      "Status": {
+        "pending": "Pending",
+        "fired": "Fired",
+        "skipped": "Skipped"
+      }
+    },
+    "Config": {
+      "Title": "Configure {action}",
+      "Weapon": "Weapon",
+      "WeaponHint": "Pick the weapon used for this attack",
+      "NoWeapons": "No weapons found on this actor",
+      "Target": "Target(s)",
+      "TargetHint": "Comma-separated token names, or leave blank to pick at fire time",
+      "Accuracy": "Accuracy",
+      "AccuracyHint": "Number of accuracy dice",
+      "Difficulty": "Difficulty",
+      "DifficultyHint": "Number of difficulty dice",
+      "Notes": "Notes",
+      "NotesPlaceholder": "Anything to remember about this action...",
+      "Save": "Add to Queue",
+      "Cancel": "Cancel",
+      "Update": "Update"
+    },
+    "Actions": {
+      "skirmish": "Skirmish",
+      "barrage": "Barrage",
+      "quick-tech": "Quick Tech",
+      "full-tech": "Full Tech",
+      "boost": "Boost",
+      "overwatch": "Overwatch",
+      "brace": "Brace",
+      "stabilize": "Stabilize",
+      "disengage": "Disengage",
+      "hide": "Hide",
+      "search": "Search",
+      "ram": "Ram",
+      "grapple": "Grapple",
+      "improvised": "Improvised Attack",
+      "overcharge": "Overcharge",
+      "protocol": "Protocol",
+      "custom": "Custom Action"
+    },
+    "Notifications": {
+      "QueueCleared": "Queue cleared",
+      "ItemAdded": "{action} added to queue",
+      "ItemRemoved": "{action} removed",
+      "Fired": "Fired {count} action(s)",
+      "FireEmpty": "Queue is empty",
+      "NoSelection": "Select a combatant first",
+      "PermissionDenied": "You don't have permission to edit this combatant's queue"
+    }
+  }
+}
