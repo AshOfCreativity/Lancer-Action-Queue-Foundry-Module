@@ -1,4 +1,4 @@
-import { MODULE_ID, ACTION_CATALOG, ACTION_CATEGORIES, QUEUE_ITEM_STATUS, getActionDef } from "./constants.mjs";
+import { MODULE_ID, ACTION_CATALOG, ACTION_CATEGORIES, QUEUE_ITEM_STATUS, getActionDef, getActorActions } from "./constants.mjs";
 import {
   getQueue,
   addItem,
@@ -20,10 +20,6 @@ function escHTML(str) {
     .replace(/'/g, "&#039;");
 }
 
-/**
- * Resolve the holder doc (Combatant) the queue lives on, given a holderId.
- * Returns null if combat is gone or the combatant no longer exists.
- */
 function resolveHolder(holderId) {
   if (!holderId) return null;
   const combat = game.combat;
@@ -61,7 +57,6 @@ export class ActionQueueApp extends Application {
     });
   }
 
-  /** Auto-select the active combatant on first open if nothing is selected. */
   _autoSelect() {
     if (this.selectedHolderId) return;
     const combat = game.combat;
@@ -91,7 +86,6 @@ export class ActionQueueApp extends Application {
 
     const visible = this._visibleCombatants(combat);
 
-    // Group combatants by section: players, npcs, defeated.
     const sections = {
       player: { id: "player", label: game.i18n.localize("ACTIONQUEUE.Combatants.PlayerSection"), items: [] },
       npc: { id: "npc", label: game.i18n.localize("ACTIONQUEUE.Combatants.NPCSection"), items: [] },
@@ -119,7 +113,6 @@ export class ActionQueueApp extends Application {
     context.hasCombat = !!combat;
     context.combatantSections = Object.values(sections).filter(s => s.items.length > 0);
 
-    // Selected combatant + its queue.
     const selected = resolveHolder(this.selectedHolderId);
     context.selectedCombatant = selected
       ? {
@@ -133,15 +126,17 @@ export class ActionQueueApp extends Application {
     const rawQueue = selected ? getQueue(selected) : [];
     context.queueItems = rawQueue.map((item, index) => {
       const def = getActionDef(item.actionId);
+      const isActorAction = item.actionId.includes(":");
       return {
         ...item,
         index,
         actionName: item.payload?.customName?.trim()
+          || (isActorAction ? (item.payload?.itemName || item.actionId) : "")
           || (def ? localizeAction(item.actionId) : item.actionId),
-        actionIcon: def?.icon ?? "fas fa-question",
+        actionIcon: item.payload?.icon || def?.icon || "fas fa-question",
         category: def?.category ?? ACTION_CATEGORIES.OTHER,
         statusLabel: game.i18n.localize(`ACTIONQUEUE.Queue.Status.${item.status}`),
-        isAttack: !!def?.isAttack,
+        isAttack: item.payload?.isAttack ?? !!def?.isAttack,
         isFired: item.status === QUEUE_ITEM_STATUS.FIRED,
         isPending: item.status === QUEUE_ITEM_STATUS.PENDING,
         metaPills: this._buildMetaPills(item, selected)
@@ -149,20 +144,38 @@ export class ActionQueueApp extends Application {
     });
     context.queueIsEmpty = context.queueItems.length === 0;
 
-    // Action palette (filtered by category).
+    // Build palette: actor-specific actions first, then standard actions
     const filter = this.filterCategory;
-    context.palette = ACTION_CATALOG
+    const actorActions = selected?.actor ? getActorActions(selected.actor) : [];
+
+    const actorPalette = actorActions
+      .filter(def => !filter || def.category === filter)
+      .map(def => ({
+        id: def.id,
+        name: def.name,
+        category: def.category,
+        icon: def.icon,
+        isAttack: !!def.isAttack,
+        isActorAction: true,
+        itemId: def.itemId
+      }));
+
+    const standardPalette = ACTION_CATALOG
       .filter(def => !filter || def.category === filter)
       .map(def => ({
         id: def.id,
         name: localizeAction(def.id),
         category: def.category,
         icon: def.icon,
-        isAttack: !!def.isAttack
+        isAttack: !!def.isAttack,
+        isActorAction: false
       }));
-    context.paletteEmpty = context.palette.length === 0;
 
-    // Category filter buttons.
+    context.actorPalette = actorPalette;
+    context.standardPalette = standardPalette;
+    context.hasActorActions = actorPalette.length > 0;
+    context.paletteEmpty = actorPalette.length === 0 && standardPalette.length === 0;
+
     context.categoryFilters = [
       { id: "all", label: game.i18n.localize("ACTIONQUEUE.Palette.Categories.all"), active: !filter },
       ...Object.values(ACTION_CATEGORIES).map(catId => ({
@@ -178,26 +191,18 @@ export class ActionQueueApp extends Application {
   _buildMetaPills(item, holder) {
     const def = getActionDef(item.actionId);
     const pills = [];
-    if (!def) return pills;
-    if (def.isAttack) {
-      const weaponName = this._weaponName(item.payload?.weaponId, holder);
-      if (weaponName) pills.push({ label: weaponName });
-      const targets = item.payload?.targetNames;
-      if (Array.isArray(targets) && targets.length > 0) {
-        pills.push({ label: `→ ${targets.join(", ")}` });
-      }
-      const acc = Number(item.payload?.accuracy ?? 0);
-      const diff = Number(item.payload?.difficulty ?? 0);
-      if (acc) pills.push({ label: `+${acc} acc` });
-      if (diff) pills.push({ label: `+${diff} diff` });
+    if (item.payload?.itemName) {
+      pills.push({ label: item.payload.itemName });
     }
+    const targets = item.payload?.targetNames;
+    if (Array.isArray(targets) && targets.length > 0) {
+      pills.push({ label: `→ ${targets.join(", ")}` });
+    }
+    const acc = Number(item.payload?.accuracy ?? 0);
+    const diff = Number(item.payload?.difficulty ?? 0);
+    if (acc) pills.push({ label: `+${acc} acc` });
+    if (diff) pills.push({ label: `+${diff} diff` });
     return pills;
-  }
-
-  _weaponName(weaponId, holder) {
-    if (!weaponId || !holder?.actor) return null;
-    const item = holder.actor.items?.get(weaponId);
-    return item?.name ?? null;
   }
 
   activateListeners(html) {
@@ -234,7 +239,9 @@ export class ActionQueueApp extends Application {
 
   async _onAddAction(event) {
     event.preventDefault();
-    const actionId = event.currentTarget.dataset.actionId;
+    const card = event.currentTarget;
+    const actionId = card.dataset.actionId;
+    const isActorAction = card.dataset.actorAction === "true";
     const holder = resolveHolder(this.selectedHolderId);
     if (!holder) {
       ui.notifications.warn(game.i18n.localize("ACTIONQUEUE.Notifications.NoSelection"));
@@ -244,11 +251,26 @@ export class ActionQueueApp extends Application {
       ui.notifications.warn(game.i18n.localize("ACTIONQUEUE.Notifications.PermissionDenied"));
       return;
     }
+
+    if (isActorAction) {
+      // Actor-specific action: add directly with item reference
+      const itemId = actionId.split(":")[1];
+      const item = holder.actor?.items?.get(itemId);
+      const itemName = item?.name || actionId;
+      await addItem(holder, actionId, {
+        payload: { itemId, itemName, isAttack: card.dataset.isAttack === "true", icon: card.dataset.icon },
+        notes: ""
+      });
+      ui.notifications.info(game.i18n.format("ACTIONQUEUE.Notifications.ItemAdded", { action: itemName }));
+      this.render(false);
+      return;
+    }
+
     const def = getActionDef(actionId);
     if (!def) return;
 
     const config = await this._showConfigDialog({ actionDef: def, holder });
-    if (!config) return; // cancelled
+    if (!config) return;
 
     await addItem(holder, actionId, { payload: config.payload, notes: config.notes });
     ui.notifications.info(game.i18n.format("ACTIONQUEUE.Notifications.ItemAdded", {
@@ -266,6 +288,17 @@ export class ActionQueueApp extends Application {
     const queue = getQueue(holder);
     const item = queue.find(i => i.id === itemId);
     if (!item) return;
+
+    // Actor actions just get notes editing
+    if (item.actionId.includes(":")) {
+      const notes = await this._showNotesDialog(item);
+      if (notes !== null) {
+        await updateItem(holder, itemId, { notes });
+        this.render(false);
+      }
+      return;
+    }
+
     const def = getActionDef(item.actionId);
     if (!def) return;
 
@@ -346,11 +379,6 @@ export class ActionQueueApp extends Application {
     this.render(false);
   }
 
-  /**
-   * Open a config dialog for an action. For attacks, shows weapon/target/acc/diff inputs.
-   * For non-attacks, shows just notes (and a custom-name field for "custom" actions).
-   * Returns { payload, notes } or null on cancel.
-   */
   _showConfigDialog({ actionDef, holder, existing = null }) {
     return new Promise((resolve) => {
       const isAttack = !!actionDef.isAttack;
@@ -459,10 +487,38 @@ export class ActionQueueApp extends Application {
     });
   }
 
+  _showNotesDialog(existing) {
+    return new Promise((resolve) => {
+      new Dialog({
+        title: `Edit Notes — ${existing.payload?.itemName || existing.actionId}`,
+        content: `
+          <form class="aq-config-form">
+            <div class="form-group">
+              <label>${game.i18n.localize("ACTIONQUEUE.Config.Notes")}</label>
+              <textarea name="notes" rows="3">${escHTML(existing.notes ?? "")}</textarea>
+            </div>
+          </form>
+        `,
+        buttons: {
+          save: {
+            icon: '<i class="fas fa-check"></i>',
+            label: game.i18n.localize("ACTIONQUEUE.Config.Update"),
+            callback: (html) => resolve(html.find('[name="notes"]').val()?.trim() ?? "")
+          },
+          cancel: {
+            label: game.i18n.localize("ACTIONQUEUE.Config.Cancel"),
+            callback: () => resolve(null)
+          }
+        },
+        default: "save",
+        close: () => resolve(null)
+      }).render(true);
+    });
+  }
+
   _collectWeapons(holder) {
     const actor = holder?.actor;
     if (!actor?.items) return [];
-    // LANCER weapon item types include: mech_weapon, pilot_weapon, npc_feature (with type=weapon).
     return actor.items
       .filter(i => {
         if (i.type === "mech_weapon" || i.type === "pilot_weapon") return true;

@@ -14,14 +14,8 @@ export const ACTION_CATEGORIES = {
 };
 
 /**
- * Catalog of standard LANCER actions a player or NPC might queue.
- *
- * Fields:
- *   id          stable lookup key
- *   name        display name (i18n key under ACTIONQUEUE.Actions.<id>)
- *   category    one of ACTION_CATEGORIES
- *   isAttack    true if this action wants weapon/target/acc/diff config captured up front
- *   icon        FontAwesome class
+ * Standard LANCER actions available in the palette.
+ * These are always shown regardless of actor type.
  */
 export const ACTION_CATALOG = [
   { id: "skirmish",   category: ACTION_CATEGORIES.QUICK,    isAttack: true,  icon: "fas fa-crosshairs" },
@@ -74,4 +68,100 @@ export function createQueueItem(actionId, { payload = {}, notes = "" } = {}) {
     payload,
     createdAt: Date.now()
   };
+}
+
+/**
+ * Collect weapons and actionable features from an actor for the palette.
+ * Returns an array of palette entries representing the actor's own capabilities.
+ */
+export function getActorActions(actor) {
+  if (!actor?.items) return [];
+
+  const actions = [];
+
+  for (const item of actor.items) {
+    if (item.type === "mech_weapon" || item.type === "pilot_weapon") {
+      actions.push({
+        id: `weapon:${item.id}`,
+        name: item.name,
+        category: ACTION_CATEGORIES.QUICK,
+        isAttack: true,
+        isWeapon: true,
+        icon: "fas fa-crosshairs",
+        itemId: item.id,
+        itemType: item.type
+      });
+    }
+
+    if (item.type === "npc_feature") {
+      const featureType = item.system?.type?.toLowerCase?.();
+      if (featureType === "weapon") {
+        actions.push({
+          id: `weapon:${item.id}`,
+          name: item.name,
+          category: ACTION_CATEGORIES.QUICK,
+          isAttack: true,
+          isWeapon: true,
+          icon: "fas fa-crosshairs",
+          itemId: item.id,
+          itemType: "npc_feature"
+        });
+      } else if (featureType === "tech") {
+        actions.push({
+          id: `tech:${item.id}`,
+          name: item.name,
+          category: ACTION_CATEGORIES.QUICK,
+          isAttack: true,
+          isWeapon: false,
+          isTech: true,
+          icon: "fas fa-wrench",
+          itemId: item.id,
+          itemType: "npc_feature"
+        });
+      } else if (featureType === "reaction") {
+        actions.push({
+          id: `reaction:${item.id}`,
+          name: item.name,
+          category: ACTION_CATEGORIES.REACTION,
+          isAttack: false,
+          isWeapon: false,
+          icon: "fas fa-bolt",
+          itemId: item.id,
+          itemType: "npc_feature"
+        });
+      } else if (featureType === "system" || featureType === "trait") {
+        const hasAction = item.system?.actions?.length > 0;
+        if (hasAction) {
+          actions.push({
+            id: `system:${item.id}`,
+            name: item.name,
+            category: ACTION_CATEGORIES.QUICK,
+            isAttack: false,
+            isWeapon: false,
+            icon: "fas fa-cog",
+            itemId: item.id,
+            itemType: "npc_feature"
+          });
+        }
+      }
+    }
+
+    if (item.type === "mech_system") {
+      const hasAction = item.system?.actions?.length > 0;
+      if (hasAction) {
+        actions.push({
+          id: `system:${item.id}`,
+          name: item.name,
+          category: ACTION_CATEGORIES.QUICK,
+          isAttack: false,
+          isWeapon: false,
+          icon: "fas fa-cog",
+          itemId: item.id,
+          itemType: "mech_system"
+        });
+      }
+    }
+  }
+
+  return actions;
 }

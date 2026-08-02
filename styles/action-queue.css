@@ -129,12 +129,25 @@
   border-color: #4fc3f7;
 }
 
+.aq-palette-scroll {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.aq-palette-section-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #888;
+  padding: 0.5rem 0.75rem 0.25rem;
+  border-bottom: 1px solid #333;
+}
+
 .aq-palette-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 0.5rem;
   padding: 0.75rem;
-  overflow-y: auto;
 }
 
 .aq-action-card {
@@ -149,6 +162,14 @@
 .aq-action-card:hover {
   border-color: #4fc3f7;
   transform: translateY(-1px);
+}
+
+.aq-actor-action {
+  border-left: 3px solid #f39c12;
+}
+
+.aq-actor-action:hover {
+  border-color: #f39c12;
 }
 
 .aq-action-card-name {

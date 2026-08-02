@@ -2,7 +2,7 @@
   "id": "lancer-action-queue",
   "title": "LANCER Action Queue",
   "description": "Queue multiple LANCER actions on a combatant and fire them as a batch — built for high-attack-count turns (Barrage, Death's Head, multi-skirmish combos) and for GMs running NPCs with several actions per turn.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "compatibility": {
     "minimum": "11",
     "verified": "12"
