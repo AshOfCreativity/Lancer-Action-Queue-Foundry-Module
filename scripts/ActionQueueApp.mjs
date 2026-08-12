@@ -202,6 +202,7 @@ export class ActionQueueApp extends Application {
     const diff = Number(item.payload?.difficulty ?? 0);
     if (acc) pills.push({ label: `+${acc} acc` });
     if (diff) pills.push({ label: `+${diff} diff` });
+    Hooks.callAll("actionQueue.buildMetaPills", pills, item, holder);
     return pills;
   }
 
