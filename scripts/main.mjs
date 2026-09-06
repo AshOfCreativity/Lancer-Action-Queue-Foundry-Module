@@ -1,4 +1,4 @@
-import { MODULE_ID } from "./constants.mjs";
+import { MODULE_ID, suggestDefaultQueue, computeActionEconomy } from "./constants.mjs";
 import { ActionQueueApp } from "./ActionQueueApp.mjs";
 import { fireQueue } from "./executor.mjs";
 import {
@@ -72,6 +72,8 @@ Hooks.once("init", () => {
   game.modules.get(MODULE_ID).api = {
     open: openApp,
     fireQueue,
+    suggestDefaultQueue,
+    computeActionEconomy,
     queue: {
       get: getQueue,
       add: addItem,

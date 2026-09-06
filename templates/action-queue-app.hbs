@@ -80,6 +80,9 @@
       <div class="aq-queue-actions">
         {{#if selectedCombatant}}
           {{#if selectedCombatant.canEdit}}
+            <button type="button" class="aq-btn aq-suggest-btn" title="{{localize "ACTIONQUEUE.Suggest.Button"}}">
+              <i class="fas fa-magic"></i>
+            </button>
             <button type="button" class="aq-btn aq-clear-btn">{{localize "ACTIONQUEUE.Queue.Clear"}}</button>
             <button type="button" class="aq-btn aq-btn-primary aq-fire-btn">
               <i class="fas fa-play"></i> {{localize "ACTIONQUEUE.Queue.Fire"}}
@@ -88,6 +91,17 @@
         {{/if}}
       </div>
     </div>
+    {{#if actionEconomy}}
+      <div class="aq-economy-bar {{#if actionEconomy.overBudget}}over-budget{{/if}}">
+        <span class="aq-economy-label">{{actionEconomy.pointsUsed}} / {{actionEconomy.totalBudget}} AP</span>
+        {{#if actionEconomy.overBudget}}
+          <span class="aq-economy-warn"><i class="fas fa-exclamation-triangle"></i> {{localize "ACTIONQUEUE.Economy.OverBudget"}}</span>
+        {{/if}}
+        {{#if actionEconomy.overcharges}}
+          <span class="aq-economy-tag">+{{actionEconomy.overcharges}} OC</span>
+        {{/if}}
+      </div>
+    {{/if}}
 
     <div class="aq-queue-list">
       {{#if queueIsEmpty}}
@@ -103,6 +117,11 @@
               <span class="aq-queue-item-name">{{this.actionName}}</span>
               <div class="aq-queue-item-controls">
                 {{#if ../selectedCombatant.canEdit}}
+                  {{#if this.isAttack}}
+                    <button type="button" class="aq-icon-btn aq-target-btn" data-item-id="{{this.id}}" title="{{localize "ACTIONQUEUE.Config.PickTargets"}}">
+                      <i class="fas fa-crosshairs"></i>
+                    </button>
+                  {{/if}}
                   <button type="button" class="aq-icon-btn aq-toggle-status" data-item-id="{{this.id}}" title="{{this.statusLabel}}">
                     <i class="fas {{#if this.isFired}}fa-undo{{else}}fa-check{{/if}}"></i>
                   </button>
@@ -124,7 +143,7 @@
             {{#if this.metaPills.length}}
               <div class="aq-queue-item-meta">
                 {{#each this.metaPills}}
-                  <span class="aq-queue-item-meta-pill">{{this.label}}</span>
+                  <span class="aq-queue-item-meta-pill {{#if this.type}}pill-{{this.type}}{{/if}}">{{this.label}}</span>
                 {{/each}}
               </div>
             {{/if}}

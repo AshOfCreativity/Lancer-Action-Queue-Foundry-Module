@@ -47,6 +47,8 @@
       "NoWeapons": "No weapons found on this actor",
       "Target": "Target(s)",
       "TargetHint": "Comma-separated token names, or leave blank to pick at fire time",
+      "PickTargets": "Pick Targets",
+      "ClearTargets": "Clear",
       "Accuracy": "Accuracy",
       "AccuracyHint": "Number of accuracy dice",
       "Difficulty": "Difficulty",
@@ -56,6 +58,16 @@
       "Save": "Add to Queue",
       "Cancel": "Cancel",
       "Update": "Update"
+    },
+    "Economy": {
+      "OverBudget": "Over action budget!"
+    },
+    "Suggest": {
+      "Button": "Auto-suggest turn",
+      "ConfirmTitle": "Replace Queue?",
+      "ConfirmReplace": "This will clear the current queue and replace it with a suggested turn. Continue?",
+      "NoSuggestions": "No suggestions for this combatant's loadout",
+      "Applied": "Suggested {count} action(s)"
     },
     "Actions": {
       "skirmish": "Skirmish",

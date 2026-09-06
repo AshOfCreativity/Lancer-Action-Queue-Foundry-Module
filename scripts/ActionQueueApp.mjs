@@ -1,4 +1,4 @@
-import { MODULE_ID, ACTION_CATALOG, ACTION_CATEGORIES, QUEUE_ITEM_STATUS, getActionDef, getActorActions } from "./constants.mjs";
+import { MODULE_ID, ACTION_CATALOG, ACTION_CATEGORIES, QUEUE_ITEM_STATUS, ACTION_COST, getActionDef, getActorActions, getItemCost, computeActionEconomy, suggestDefaultQueue } from "./constants.mjs";
 import {
   getQueue,
   addItem,
@@ -144,6 +144,13 @@ export class ActionQueueApp extends Application {
     });
     context.queueIsEmpty = context.queueItems.length === 0;
 
+    // Action economy
+    if (selected?.actor && rawQueue.length > 0) {
+      context.actionEconomy = computeActionEconomy(rawQueue, selected.actor);
+    } else {
+      context.actionEconomy = null;
+    }
+
     // Build palette: actor-specific actions first, then standard actions
     const filter = this.filterCategory;
     const actorActions = selected?.actor ? getActorActions(selected.actor) : [];
@@ -194,14 +201,28 @@ export class ActionQueueApp extends Application {
     if (item.payload?.itemName) {
       pills.push({ label: item.payload.itemName });
     }
-    const targets = item.payload?.targetNames;
-    if (Array.isArray(targets) && targets.length > 0) {
-      pills.push({ label: `→ ${targets.join(", ")}` });
+    // Resolve targets from IDs for live names, fall back to stored names
+    const targetIds = item.payload?.targetIds;
+    if (Array.isArray(targetIds) && targetIds.length > 0) {
+      const names = targetIds.map(id => {
+        const token = canvas.tokens?.get(id);
+        return token?.name ?? id;
+      });
+      pills.push({ label: `→ ${names.join(", ")}`, type: "target" });
+    } else {
+      const targets = item.payload?.targetNames;
+      if (Array.isArray(targets) && targets.length > 0) {
+        pills.push({ label: `→ ${targets.join(", ")}`, type: "target" });
+      }
     }
     const acc = Number(item.payload?.accuracy ?? 0);
     const diff = Number(item.payload?.difficulty ?? 0);
     if (acc) pills.push({ label: `+${acc} acc` });
     if (diff) pills.push({ label: `+${diff} diff` });
+    // Action cost pill
+    const cost = getItemCost(item);
+    if (cost === ACTION_COST.QUICK) pills.push({ label: "Q", type: "cost" });
+    else if (cost === ACTION_COST.FULL) pills.push({ label: "F", type: "cost" });
     Hooks.callAll("actionQueue.buildMetaPills", pills, item, holder);
     return pills;
   }
@@ -219,6 +240,12 @@ export class ActionQueueApp extends Application {
     html.find(".aq-toggle-status").on("click", this._onToggleStatus.bind(this));
     html.find(".aq-move-up").on("click", this._onMove.bind(this, -1));
     html.find(".aq-move-down").on("click", this._onMove.bind(this, 1));
+    html.find(".aq-target-btn").on("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      this._showTargetPicker(ev.currentTarget.dataset.itemId);
+    });
+    html.find(".aq-suggest-btn").on("click", this._onAutoSuggest.bind(this));
 
     this._initQueueDragDrop(html);
   }
@@ -527,6 +554,117 @@ export class ActionQueueApp extends Application {
         return false;
       })
       .map(i => ({ id: i.id, name: i.name }));
+  }
+
+  _showTargetPicker(itemId) {
+    const holder = resolveHolder(this.selectedHolderId);
+    if (!holder || !canEditCombatant(holder)) return;
+    const queue = getQueue(holder);
+    const item = queue.find(i => i.id === itemId);
+    if (!item) return;
+
+    const combat = game.combat;
+    if (!combat) return;
+
+    const currentTargets = item.payload?.targetIds ?? [];
+    const combatants = combat.combatants.contents.filter(c => c.id !== holder.id);
+
+    const rows = combatants.map(c => {
+      const checked = currentTargets.includes(c.token?.id ?? c.id) ? "checked" : "";
+      const img = c.img ?? c.actor?.img ?? "icons/svg/mystery-man.svg";
+      return `
+        <label class="aq-target-row" style="display:flex;align-items:center;gap:0.5rem;padding:0.25rem 0;cursor:pointer;">
+          <input type="checkbox" name="target" value="${c.token?.id ?? c.id}" data-name="${escHTML(c.name)}" ${checked} />
+          <img src="${img}" style="width:24px;height:24px;border-radius:3px;object-fit:cover;" />
+          <span>${escHTML(c.name)}</span>
+        </label>`;
+    }).join("");
+
+    const useSelected = canvas.tokens?.controlled?.length > 0
+      ? `<button type="button" class="aq-btn" id="aq-use-selected" style="margin-bottom:0.5rem;width:100%;">
+           <i class="fas fa-crosshairs"></i> Use selected tokens (${canvas.tokens.controlled.length})
+         </button>`
+      : "";
+
+    new Dialog({
+      title: game.i18n.localize("ACTIONQUEUE.Config.PickTargets"),
+      content: `<div class="aq-target-picker" style="max-height:300px;overflow-y:auto;">${useSelected}${rows}</div>`,
+      buttons: {
+        save: {
+          icon: '<i class="fas fa-check"></i>',
+          label: game.i18n.localize("ACTIONQUEUE.Config.Save"),
+          callback: async (html) => {
+            const checked = html.find('input[name="target"]:checked');
+            const targetIds = [];
+            const targetNames = [];
+            checked.each((_, el) => {
+              targetIds.push(el.value);
+              targetNames.push(el.dataset.name);
+            });
+            await updateItem(holder, itemId, {
+              payload: { ...item.payload, targetIds, targetNames }
+            });
+            this.render(false);
+          }
+        },
+        clear: {
+          icon: '<i class="fas fa-eraser"></i>',
+          label: game.i18n.localize("ACTIONQUEUE.Config.ClearTargets"),
+          callback: async () => {
+            await updateItem(holder, itemId, {
+              payload: { ...item.payload, targetIds: [], targetNames: [] }
+            });
+            this.render(false);
+          }
+        },
+        cancel: {
+          icon: '<i class="fas fa-times"></i>',
+          label: game.i18n.localize("ACTIONQUEUE.Config.Cancel")
+        }
+      },
+      default: "save",
+      render: (html) => {
+        const btn = html.find("#aq-use-selected");
+        if (btn.length) {
+          btn.on("click", () => {
+            const controlled = canvas.tokens.controlled;
+            html.find('input[name="target"]').each((_, el) => {
+              el.checked = controlled.some(t => t.id === el.value);
+            });
+          });
+        }
+      }
+    }).render(true);
+  }
+
+  async _onAutoSuggest(event) {
+    event.preventDefault();
+    const holder = resolveHolder(this.selectedHolderId);
+    if (!holder || !canEditCombatant(holder)) return;
+    const actor = holder.actor;
+    if (!actor) return;
+
+    const existing = getQueue(holder);
+    if (existing.length > 0) {
+      const confirmed = await Dialog.confirm({
+        title: game.i18n.localize("ACTIONQUEUE.Suggest.ConfirmTitle"),
+        content: `<p>${game.i18n.localize("ACTIONQUEUE.Suggest.ConfirmReplace")}</p>`
+      });
+      if (!confirmed) return;
+      await clearQueue(holder);
+    }
+
+    const suggestions = suggestDefaultQueue(actor);
+    if (suggestions.length === 0) {
+      ui.notifications.info(game.i18n.localize("ACTIONQUEUE.Suggest.NoSuggestions"));
+      return;
+    }
+
+    for (const item of suggestions) {
+      await addItem(holder, item.actionId, { payload: item.payload, notes: item.notes });
+    }
+    ui.notifications.info(game.i18n.format("ACTIONQUEUE.Suggest.Applied", { count: suggestions.length }));
+    this.render(false);
   }
 
   _initQueueDragDrop(html) {

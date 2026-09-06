@@ -399,3 +399,59 @@
   grid-template-columns: 1fr 1fr;
   gap: 0.5rem;
 }
+
+/* Action economy bar */
+.aq-economy-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.75rem;
+  background: #1f1f1f;
+  border-bottom: 1px solid #333;
+  font-size: 0.75rem;
+}
+
+.aq-economy-label {
+  font-weight: 600;
+  color: #4fc3f7;
+}
+
+.aq-economy-bar.over-budget .aq-economy-label {
+  color: #ef5350;
+}
+
+.aq-economy-warn {
+  color: #ef5350;
+  font-weight: 600;
+}
+
+.aq-economy-tag {
+  background: #f39c12;
+  color: #000;
+  padding: 0.05rem 0.35rem;
+  border-radius: 3px;
+  font-weight: 600;
+  font-size: 0.7rem;
+}
+
+/* Pill type variants */
+.aq-queue-item-meta-pill.pill-target {
+  background: #2c3e50;
+  border-color: #4fc3f7;
+  color: #4fc3f7;
+}
+
+.aq-queue-item-meta-pill.pill-cost {
+  background: #333;
+  border-color: #666;
+  color: #aaa;
+  font-weight: 700;
+  min-width: 1.2rem;
+  text-align: center;
+}
+
+/* Target picker dialog */
+.aq-target-row:hover {
+  background: #2a2a2a;
+  border-radius: 3px;
+}
