@@ -130,6 +130,7 @@ export function getItemCost(item) {
   if (def) return def.cost;
   if (item.payload?.cost) return item.payload.cost;
   if (item.actionId.startsWith("reaction:")) return ACTION_COST.REACTION;
+  if (item.actionId.startsWith("deployable:")) return item.payload?.cost || ACTION_COST.QUICK;
   return ACTION_COST.NONE;
 }
 
@@ -239,6 +240,29 @@ export function suggestDefaultQueue(actor) {
       }
     }));
   }
+
+  if (actor.type === "deployable") {
+    const sysActions = actor.system?.actions ?? [];
+    for (let ai = 0; ai < sysActions.length; ai++) {
+      const action = sysActions[ai];
+      if (!action.name) continue;
+      const activation = action.activation || "Quick";
+      const cost = ACTIVATION_MAP[activation] || ACTION_COST.QUICK;
+      if (cost === ACTION_COST.REACTION || cost === ACTION_COST.PROTOCOL) continue;
+      const isAttack = (action.damage?.length > 0) || (action.range?.length > 0);
+      suggestions.push(createQueueItem(`deployable:${ai}`, {
+        payload: {
+          actionIndex: ai,
+          itemName: action.name,
+          cost,
+          isAttack,
+          icon: isAttack ? "fas fa-crosshairs" : "fas fa-cog"
+        }
+      }));
+    }
+    return suggestions;
+  }
+
   return suggestions;
 }
 
@@ -401,6 +425,32 @@ export function getActorActions(actor) {
           itemType: "pilot_gear"
         });
       }
+    }
+  }
+
+  // Deployable actor actions from system.actions
+  if (actor.type === "deployable") {
+    const sysActions = actor.system?.actions ?? [];
+    for (let ai = 0; ai < sysActions.length; ai++) {
+      const action = sysActions[ai];
+      if (!action.name) continue;
+      const activation = action.activation || "Quick";
+      const cost = ACTIVATION_MAP[activation] || ACTION_COST.QUICK;
+      const isAttack = (action.damage?.length > 0) || (action.range?.length > 0);
+      const isTech = !!action.tech_attack;
+
+      actions.push({
+        id: `deployable:${ai}`,
+        name: action.name,
+        category: costToCategory(cost),
+        cost,
+        isAttack,
+        isWeapon: false,
+        isTech,
+        icon: isTech ? "fas fa-wrench" : isAttack ? "fas fa-crosshairs" : "fas fa-cog",
+        actionIndex: ai,
+        itemType: "deployable_action"
+      });
     }
   }
 

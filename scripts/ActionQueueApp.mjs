@@ -1,4 +1,4 @@
-import { MODULE_ID, ACTION_CATALOG, ACTION_CATEGORIES, QUEUE_ITEM_STATUS, ACTION_COST, getActionDef, getActorActions, getItemCost, computeActionEconomy, suggestDefaultQueue } from "./constants.mjs";
+import { MODULE_ID, ACTION_CATALOG, ACTION_CATEGORIES, QUEUE_ITEM_STATUS, ACTION_COST, getActionDef, getActorActions, getItemCost, computeActionEconomy, suggestDefaultQueue, getMountWeapons } from "./constants.mjs";
 import {
   getQueue,
   addItem,
@@ -154,6 +154,7 @@ export class ActionQueueApp extends Application {
     // Build palette: actor-specific actions first, then standard actions
     const filter = this.filterCategory;
     const actorActions = selected?.actor ? getActorActions(selected.actor) : [];
+    this._actorActionsCache = actorActions;
 
     const actorPalette = actorActions
       .filter(def => !filter || def.category === filter)
@@ -161,6 +162,7 @@ export class ActionQueueApp extends Application {
         id: def.id,
         name: def.name,
         category: def.category,
+        cost: def.cost,
         icon: def.icon,
         isAttack: !!def.isAttack,
         isActorAction: true,
@@ -281,15 +283,21 @@ export class ActionQueueApp extends Application {
     }
 
     if (isActorAction) {
-      // Actor-specific action: add directly with item reference
-      const itemId = actionId.split(":")[1];
-      const item = holder.actor?.items?.get(itemId);
-      const itemName = item?.name || actionId;
-      await addItem(holder, actionId, {
-        payload: { itemId, itemName, cost: card.dataset.cost || undefined, isAttack: card.dataset.isAttack === "true", icon: card.dataset.icon },
-        notes: ""
-      });
-      ui.notifications.info(game.i18n.format("ACTIONQUEUE.Notifications.ItemAdded", { action: itemName }));
+      const actorDef = (this._actorActionsCache ?? []).find(a => a.id === actionId);
+      const payload = {
+        itemName: actorDef?.name ?? actionId,
+        cost: actorDef?.cost ?? ACTION_COST.QUICK,
+        isAttack: !!actorDef?.isAttack,
+        icon: actorDef?.icon ?? "fas fa-cog"
+      };
+      if (actorDef?.itemId) payload.itemId = actorDef.itemId;
+      if (actorDef?.isMount) {
+        payload.mountIndex = actorDef.mountIndex;
+        payload.weaponIds = actorDef.weaponIds;
+      }
+      if (actorDef?.actionIndex != null) payload.actionIndex = actorDef.actionIndex;
+      await addItem(holder, actionId, { payload, notes: "" });
+      ui.notifications.info(game.i18n.format("ACTIONQUEUE.Notifications.ItemAdded", { action: payload.itemName }));
       this.render(false);
       return;
     }
@@ -412,20 +420,79 @@ export class ActionQueueApp extends Application {
       const isAttack = !!actionDef.isAttack;
       const isCustom = actionDef.id === "custom";
       const existingPayload = existing?.payload ?? {};
-      const weaponOptions = this._collectWeapons(holder);
+      const actor = holder?.actor;
+      const isMech = actor?.type === "mech";
+      const isBarrage = actionDef.id === "barrage";
+      const isSkirmish = actionDef.id === "skirmish";
+      const isMountAction = isMech && (isBarrage || isSkirmish);
+
+      const mounts = isMountAction ? this._collectMounts(holder) : [];
+      const weapons = !isMountAction ? this._collectWeapons(holder) : [];
       const selectedTokenNames = canvas.tokens?.controlled?.map(t => t.name) ?? [];
       const initialTargets = (existingPayload.targetNames ?? selectedTokenNames).join(", ");
 
-      const weaponSelect = isAttack && weaponOptions.length > 0
-        ? `<select name="weaponId">
-             <option value="">${game.i18n.localize("ACTIONQUEUE.Config.Weapon")}…</option>
-             ${weaponOptions.map(w => `
-               <option value="${w.id}" ${w.id === existingPayload.weaponId ? "selected" : ""}>${escHTML(w.name)}</option>
-             `).join("")}
-           </select>`
-        : isAttack
-          ? `<em class="hint">${game.i18n.localize("ACTIONQUEUE.Config.NoWeapons")}</em>`
-          : "";
+      let weaponField = "";
+      if (isMountAction && mounts.length > 0) {
+        const mountOptions = mounts.map(m =>
+          `<option value="${m.index}" ${m.index === existingPayload.mountIndex ? "selected" : ""}>${escHTML(m.label)}</option>`
+        ).join("");
+
+        if (isBarrage) {
+          const superheavy = mounts.find(m => m.type === "Superheavy");
+          if (superheavy) {
+            weaponField = `<div class="form-group">
+              <label>Mount (Superheavy Barrage)</label>
+              <select name="mountIndex1">
+                <option value="${superheavy.index}" selected>${escHTML(superheavy.label)}</option>
+              </select>
+              <p class="hint">Superheavy weapons use Barrage to fire.</p>
+            </div>`;
+          } else {
+            const mount2Sel = existingPayload.mountIndices?.[1] ?? "";
+            weaponField = `<div class="form-group">
+              <label>Mount 1</label>
+              <select name="mountIndex1">
+                <option value="">Select mount…</option>
+                ${mountOptions}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Mount 2</label>
+              <select name="mountIndex2">
+                <option value="">Select mount…</option>
+                ${mounts.map(m =>
+                  `<option value="${m.index}" ${m.index === mount2Sel ? "selected" : ""}>${escHTML(m.label)}</option>`
+                ).join("")}
+              </select>
+              <p class="hint">Barrage fires all weapons on two different mounts.</p>
+            </div>`;
+          }
+        } else {
+          weaponField = `<div class="form-group">
+            <label>Mount</label>
+            <select name="mountIndex1">
+              <option value="">Select mount…</option>
+              ${mountOptions}
+            </select>
+            <p class="hint">Skirmish fires all weapons on one mount.</p>
+          </div>`;
+        }
+      } else if (isAttack && weapons.length > 0) {
+        weaponField = `<div class="form-group">
+          <label>${game.i18n.localize("ACTIONQUEUE.Config.Weapon")}</label>
+          <select name="weaponId">
+            <option value="">${game.i18n.localize("ACTIONQUEUE.Config.Weapon")}…</option>
+            ${weapons.map(w =>
+              `<option value="${w.id}" ${w.id === existingPayload.weaponId ? "selected" : ""}>${escHTML(w.name)}</option>`
+            ).join("")}
+          </select>
+          <p class="hint">${game.i18n.localize("ACTIONQUEUE.Config.WeaponHint")}</p>
+        </div>`;
+      } else if (isAttack) {
+        weaponField = `<div class="form-group">
+          <em class="hint">${game.i18n.localize("ACTIONQUEUE.Config.NoWeapons")}</em>
+        </div>`;
+      }
 
       const customNameField = isCustom
         ? `<div class="form-group">
@@ -434,13 +501,8 @@ export class ActionQueueApp extends Application {
            </div>`
         : "";
 
-      const attackFields = isAttack
+      const targetAccFields = isAttack
         ? `<div class="form-group">
-             <label>${game.i18n.localize("ACTIONQUEUE.Config.Weapon")}</label>
-             ${weaponSelect}
-             <p class="hint">${game.i18n.localize("ACTIONQUEUE.Config.WeaponHint")}</p>
-           </div>
-           <div class="form-group">
              <label>${game.i18n.localize("ACTIONQUEUE.Config.Target")}</label>
              <input type="text" name="targets" value="${escHTML(initialTargets)}" placeholder="${game.i18n.localize("ACTIONQUEUE.Config.TargetHint")}" />
              <p class="hint">${game.i18n.localize("ACTIONQUEUE.Config.TargetHint")}</p>
@@ -462,7 +524,8 @@ export class ActionQueueApp extends Application {
       const content = `
         <form class="aq-config-form">
           ${customNameField}
-          ${attackFields}
+          ${weaponField}
+          ${targetAccFields}
           <div class="form-group">
             <label>${game.i18n.localize("ACTIONQUEUE.Config.Notes")}</label>
             <textarea name="notes" rows="2" placeholder="${game.i18n.localize("ACTIONQUEUE.Config.NotesPlaceholder")}">${escHTML(existing?.notes ?? "")}</textarea>
@@ -493,8 +556,36 @@ export class ActionQueueApp extends Application {
                 .filter(Boolean);
               const payload = {};
               if (isCustom) payload.customName = html.find('[name="customName"]').val()?.trim() ?? "";
-              if (isAttack) {
+
+              if (isMountAction && mounts.length > 0) {
+                const mi1 = html.find('[name="mountIndex1"]').val();
+                const mi2 = html.find('[name="mountIndex2"]').val();
+                if (mi1 !== "" && mi1 != null) {
+                  const m1 = mounts.find(m => String(m.index) === mi1);
+                  if (isBarrage && mi2 !== "" && mi2 != null) {
+                    const m2 = mounts.find(m => String(m.index) === mi2);
+                    payload.mountIndices = [parseInt(mi1), parseInt(mi2)];
+                    const names = [m1, m2].filter(Boolean).flatMap(m => m.weaponNames);
+                    payload.itemName = names.join(" + ");
+                    payload.cost = ACTION_COST.FULL;
+                  } else if (isBarrage && m1?.type === "Superheavy") {
+                    payload.mountIndices = [parseInt(mi1)];
+                    payload.itemName = m1.weaponNames.join(" + ");
+                    payload.cost = ACTION_COST.FULL;
+                  } else {
+                    payload.mountIndex = parseInt(mi1);
+                    payload.itemName = m1?.weaponNames?.join(" + ") ?? "";
+                    payload.cost = isBarrage ? ACTION_COST.FULL : ACTION_COST.QUICK;
+                  }
+                  payload.isAttack = true;
+                  payload.icon = isBarrage ? "fas fa-bullseye" : "fas fa-crosshairs";
+                }
+              } else if (isAttack) {
                 payload.weaponId = html.find('[name="weaponId"]').val() || null;
+                payload.isAttack = true;
+              }
+
+              if (isAttack) {
                 payload.targetNames = targetNames;
                 payload.accuracy = Number(html.find('[name="accuracy"]').val() ?? 0) || 0;
                 payload.difficulty = Number(html.find('[name="difficulty"]').val() ?? 0) || 0;
@@ -544,12 +635,34 @@ export class ActionQueueApp extends Application {
     });
   }
 
+  _collectMounts(holder) {
+    const actor = holder?.actor;
+    if (!actor) return [];
+    if (actor.type !== "mech") return [];
+    const mounts = actor.system?.loadout?.weapon_mounts ?? [];
+    const result = [];
+    for (let mi = 0; mi < mounts.length; mi++) {
+      const mount = mounts[mi];
+      const weapons = getMountWeapons(actor, mi);
+      if (weapons.length === 0) continue;
+      const names = weapons.map(w => w.name);
+      result.push({
+        index: mi,
+        label: `${mount.type ?? "Mount"}: ${names.join(" + ")}`,
+        type: mount.type,
+        weaponIds: weapons.map(w => w.id),
+        weaponNames: names
+      });
+    }
+    return result;
+  }
+
   _collectWeapons(holder) {
     const actor = holder?.actor;
     if (!actor?.items) return [];
     return actor.items
       .filter(i => {
-        if (i.type === "mech_weapon" || i.type === "pilot_weapon") return true;
+        if (i.type === "pilot_weapon") return true;
         if (i.type === "npc_feature" && i.system?.type?.toLowerCase?.() === "weapon") return true;
         return false;
       })

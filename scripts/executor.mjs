@@ -63,6 +63,10 @@ async function executeItem(holder, item) {
   }
 
   // Direct weapon/tech/system fire via item reference
+  if (actionId.startsWith("deployable:")) {
+    return await executeDeployableAction(actor, item);
+  }
+
   if (actionId.startsWith("weapon:") || actionId.startsWith("tech:") || actionId.startsWith("system:") || actionId.startsWith("reaction:")) {
     return await executeItemAction(actor, item);
   }
@@ -147,6 +151,42 @@ async function executeItemAction(actor, queueItem) {
   return true;
 }
 
+async function executeDeployableAction(actor, queueItem) {
+  const actionIndex = queueItem.payload?.actionIndex ?? parseInt(queueItem.actionId.split(":")[1], 10);
+  const actions = actor.system?.actions ?? [];
+  const action = actions[actionIndex];
+
+  if (!action) {
+    ui.notifications.warn(`Action not found on ${actor.name}`);
+    return false;
+  }
+
+  // Tech attacks
+  if (action.tech_attack && typeof actor.beginBasicTechAttackFlow === "function") {
+    return await withQueueTargets(queueItem.payload, () => actor.beginBasicTechAttackFlow(action.name));
+  }
+
+  // Attack actions (has damage or range)
+  if ((action.damage?.length > 0 || action.range?.length > 0) && typeof actor.beginBasicAttackFlow === "function") {
+    return await withQueueTargets(queueItem.payload, () => actor.beginBasicAttackFlow(action.name));
+  }
+
+  // Non-attack actions: post a chat card
+  const speaker = ChatMessage.getSpeaker({ actor });
+  const lines = [`<strong>${escape(action.name)}</strong>`];
+  if (action.activation) lines.push(`<em>${action.activation} Action</em>`);
+  if (action.trigger) lines.push(`<p><strong>Trigger:</strong> ${action.trigger}</p>`);
+  if (action.detail) lines.push(action.detail);
+
+  await ChatMessage.create({
+    speaker,
+    content: `<div class="lancer-action-queue-card"><div class="aq-card-tag">[Deployable Action]</div>${lines.join("")}</div>`,
+    flags: { [MODULE_ID]: { itemId: queueItem.id, actionId: queueItem.actionId } }
+  });
+
+  return true;
+}
+
 async function executeMountAction(actor, queueItem) {
   const mountIndex = queueItem.payload?.mountIndex ?? parseInt(queueItem.actionId.split(":")[1], 10);
   const weapons = getMountWeapons(actor, mountIndex);
@@ -168,8 +208,36 @@ async function executeMountAction(actor, queueItem) {
  * Otherwise trigger LANCER's basic attack flow.
  */
 async function executeWeaponAction(actor, queueItem) {
-  const weaponId = queueItem.payload?.weaponId;
+  const mountIndices = queueItem.payload?.mountIndices;
+  const mountIndex = queueItem.payload?.mountIndex;
 
+  if (Array.isArray(mountIndices)) {
+    for (const mi of mountIndices) {
+      const weapons = getMountWeapons(actor, mi);
+      for (const weapon of weapons) {
+        if (typeof weapon.beginWeaponAttackFlow === "function") {
+          await withQueueTargets(queueItem.payload, () => weapon.beginWeaponAttackFlow());
+        }
+      }
+    }
+    return true;
+  }
+
+  if (mountIndex != null) {
+    const weapons = getMountWeapons(actor, mountIndex);
+    if (weapons.length === 0) {
+      ui.notifications.warn(`Mount has no weapons on ${actor.name}.`);
+      return false;
+    }
+    for (const weapon of weapons) {
+      if (typeof weapon.beginWeaponAttackFlow === "function") {
+        await withQueueTargets(queueItem.payload, () => weapon.beginWeaponAttackFlow());
+      }
+    }
+    return true;
+  }
+
+  const weaponId = queueItem.payload?.weaponId;
   if (weaponId) {
     const weapon = actor.items.get(weaponId);
     if (weapon && typeof weapon.beginWeaponAttackFlow === "function") {
