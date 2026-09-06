@@ -42,7 +42,7 @@
           <div class="aq-palette-section-label">{{selectedCombatant.name}}</div>
           <div class="aq-palette-grid">
             {{#each actorPalette}}
-              <div class="aq-action-card aq-actor-action" data-action-id="{{this.id}}" data-actor-action="true" data-is-attack="{{this.isAttack}}" data-icon="{{this.icon}}">
+              <div class="aq-action-card aq-actor-action" data-action-id="{{this.id}}" data-actor-action="true" data-is-attack="{{this.isAttack}}" data-icon="{{this.icon}}" data-cost="{{this.cost}}">
                 <div class="aq-action-card-name"><i class="{{this.icon}}"></i> {{this.name}}</div>
                 <div class="aq-action-card-meta">
                   {{this.category}}{{#if this.isAttack}} · attack{{/if}}

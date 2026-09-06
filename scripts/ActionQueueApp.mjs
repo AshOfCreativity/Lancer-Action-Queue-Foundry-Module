@@ -286,7 +286,7 @@ export class ActionQueueApp extends Application {
       const item = holder.actor?.items?.get(itemId);
       const itemName = item?.name || actionId;
       await addItem(holder, actionId, {
-        payload: { itemId, itemName, isAttack: card.dataset.isAttack === "true", icon: card.dataset.icon },
+        payload: { itemId, itemName, cost: card.dataset.cost || undefined, isAttack: card.dataset.isAttack === "true", icon: card.dataset.icon },
         notes: ""
       });
       ui.notifications.info(game.i18n.format("ACTIONQUEUE.Notifications.ItemAdded", { action: itemName }));

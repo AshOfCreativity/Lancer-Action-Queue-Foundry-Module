@@ -1,4 +1,4 @@
-import { MODULE_ID, QUEUE_ITEM_STATUS, getActionDef } from "./constants.mjs";
+import { MODULE_ID, QUEUE_ITEM_STATUS, getActionDef, getMountWeapons } from "./constants.mjs";
 import { getQueue, setItemStatus } from "./queue-store.mjs";
 
 /**
@@ -33,6 +33,11 @@ async function executeItem(holder, item) {
   }
 
   const actionId = item.actionId;
+
+  // Mount-based fire: each weapon in the mount fires sequentially
+  if (actionId.startsWith("mount:")) {
+    return await executeMountAction(actor, item);
+  }
 
   // Direct weapon/tech/system fire via item reference
   if (actionId.startsWith("weapon:") || actionId.startsWith("tech:") || actionId.startsWith("system:") || actionId.startsWith("reaction:")) {
@@ -116,6 +121,21 @@ async function executeItemAction(actor, queueItem) {
     return await item.beginDefaultFlow();
   }
 
+  return true;
+}
+
+async function executeMountAction(actor, queueItem) {
+  const mountIndex = queueItem.payload?.mountIndex ?? parseInt(queueItem.actionId.split(":")[1], 10);
+  const weapons = getMountWeapons(actor, mountIndex);
+  if (weapons.length === 0) {
+    ui.notifications.warn(`Mount ${mountIndex} has no weapons on ${actor.name}.`);
+    return false;
+  }
+  for (const weapon of weapons) {
+    if (typeof weapon.beginWeaponAttackFlow === "function") {
+      await weapon.beginWeaponAttackFlow();
+    }
+  }
   return true;
 }
 

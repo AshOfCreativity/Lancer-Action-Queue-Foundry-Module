@@ -75,17 +75,60 @@ export function createQueueItem(actionId, { payload = {}, notes = "" } = {}) {
   };
 }
 
+const ACTIVATION_MAP = {
+  "Full": ACTION_COST.FULL,
+  "Quick": ACTION_COST.QUICK,
+  "Free": ACTION_COST.FREE,
+  "Reaction": ACTION_COST.REACTION,
+  "Protocol": ACTION_COST.PROTOCOL
+};
+
+const TAG_COST_MAP = {
+  "tg_full_action": ACTION_COST.FULL,
+  "tg_quick_action": ACTION_COST.QUICK,
+  "tg_free_action": ACTION_COST.FREE,
+  "tg_protocol": ACTION_COST.PROTOCOL,
+  "tg_reaction": ACTION_COST.REACTION
+};
+
+function resolveNpcFeatureCost(item) {
+  const tags = item.system?.tags ?? [];
+  for (const tag of tags) {
+    const mapped = TAG_COST_MAP[tag.id ?? tag.tag?.id];
+    if (mapped) return mapped;
+  }
+  const featureType = item.system?.type?.toLowerCase?.();
+  if (featureType === "reaction") return ACTION_COST.REACTION;
+  if (featureType === "weapon" || featureType === "tech") return ACTION_COST.QUICK;
+  return ACTION_COST.QUICK;
+}
+
+function resolveMechActionCost(item) {
+  const actions = item.system?.actions;
+  if (actions?.length > 0) {
+    const mapped = ACTIVATION_MAP[actions[0].activation];
+    if (mapped) return mapped;
+  }
+  return ACTION_COST.QUICK;
+}
+
+function costToCategory(cost) {
+  if (cost === ACTION_COST.FULL) return ACTION_CATEGORIES.FULL;
+  if (cost === ACTION_COST.FREE) return ACTION_CATEGORIES.FREE;
+  if (cost === ACTION_COST.REACTION) return ACTION_CATEGORIES.REACTION;
+  if (cost === ACTION_COST.PROTOCOL) return ACTION_CATEGORIES.PROTOCOL;
+  return ACTION_CATEGORIES.QUICK;
+}
+
 /**
  * Get the action cost of a queue item — used for economy tracking.
- * Actor actions (weapon:, tech:, system:) derive cost from their category.
  * Standard actions use their catalog entry's cost.
+ * Actor actions read cost from payload (set by getActorActions at queue time).
  */
 export function getItemCost(item) {
   const def = getActionDef(item.actionId);
   if (def) return def.cost;
-  if (item.actionId.startsWith("weapon:")) return ACTION_COST.QUICK;
-  if (item.actionId.startsWith("tech:")) return ACTION_COST.QUICK;
-  if (item.actionId.startsWith("system:")) return ACTION_COST.QUICK;
+  if (item.payload?.cost) return item.payload.cost;
   if (item.actionId.startsWith("reaction:")) return ACTION_COST.REACTION;
   return ACTION_COST.NONE;
 }
@@ -124,84 +167,137 @@ export function computeActionEconomy(queue, actor) {
   };
 }
 
-/**
- * Suggest a default queue for an NPC based on its loadout.
- * - 1 weapon → Skirmish with that weapon twice (2 quick actions)
- * - 2+ weapons → Barrage (1 full action)
- * - Has a tech → include Quick Tech
- * - Has a charged recharge system → suggest using it
- */
 export function suggestDefaultQueue(actor) {
   if (!actor?.items) return [];
-
-  const weapons = [];
-  const techs = [];
-  const systems = [];
-
-  for (const item of actor.items) {
-    if (item.type === "mech_weapon" || item.type === "pilot_weapon") {
-      weapons.push(item);
-    } else if (item.type === "npc_feature") {
-      const ft = item.system?.type?.toLowerCase?.();
-      if (ft === "weapon") weapons.push(item);
-      else if (ft === "tech") techs.push(item);
-      else if (ft === "system" && item.system?.actions?.length > 0) systems.push(item);
-    } else if (item.type === "mech_system" && item.system?.actions?.length > 0) {
-      systems.push(item);
-    }
-  }
-
   const suggestions = [];
 
-  if (weapons.length === 0) {
-    // No weapons: just two quick actions (boost + search, or whatever)
+  if (actor.type === "mech") {
+    const mounts = actor.system?.loadout?.weapon_mounts ?? [];
+    const loaded = [];
+    for (let mi = 0; mi < mounts.length; mi++) {
+      const weapons = getMountWeapons(actor, mi);
+      if (weapons.length > 0) loaded.push({ index: mi, mount: mounts[mi], weapons });
+    }
+    if (loaded.length === 0) return suggestions;
+
+    const superheavy = loaded.find(m => m.mount.type === "Superheavy");
+    if (superheavy) {
+      suggestions.push(createQueueItem(`mount:${superheavy.index}`, {
+        payload: {
+          mountIndex: superheavy.index,
+          itemName: superheavy.weapons.map(w => w.name).join(" + "),
+          cost: ACTION_COST.FULL, isAttack: true, icon: "fas fa-bullseye"
+        }
+      }));
+    } else if (loaded.length === 1) {
+      const m = loaded[0];
+      for (let i = 0; i < 2; i++) {
+        suggestions.push(createQueueItem(`mount:${m.index}`, {
+          payload: {
+            mountIndex: m.index,
+            itemName: m.weapons.map(w => w.name).join(" + "),
+            cost: ACTION_COST.QUICK, isAttack: true, icon: "fas fa-crosshairs"
+          }
+        }));
+      }
+    } else {
+      const m1 = loaded[0], m2 = loaded[1];
+      suggestions.push(createQueueItem("barrage", {
+        payload: {
+          mountIndices: [m1.index, m2.index],
+          itemName: `${m1.weapons.map(w => w.name).join("+")} + ${m2.weapons.map(w => w.name).join("+")}`,
+          cost: ACTION_COST.FULL, isAttack: true, icon: "fas fa-bullseye"
+        }
+      }));
+    }
     return suggestions;
   }
 
+  const weapons = [];
+  for (const item of actor.items) {
+    if (item.type === "pilot_weapon") weapons.push(item);
+    else if (item.type === "npc_feature" && item.system?.type?.toLowerCase?.() === "weapon") weapons.push(item);
+  }
+  if (weapons.length === 0) return suggestions;
+
   if (weapons.length === 1) {
-    // 1 weapon: Skirmish twice
     const w = weapons[0];
+    const cost = w.type === "npc_feature" ? resolveNpcFeatureCost(w) : ACTION_COST.QUICK;
     suggestions.push(createQueueItem(`weapon:${w.id}`, {
-      payload: { itemId: w.id, itemName: w.name, isAttack: true, icon: "fas fa-crosshairs" }
+      payload: { itemId: w.id, itemName: w.name, cost, isAttack: true, icon: "fas fa-crosshairs" }
     }));
     suggestions.push(createQueueItem(`weapon:${w.id}`, {
-      payload: { itemId: w.id, itemName: w.name, isAttack: true, icon: "fas fa-crosshairs" }
+      payload: { itemId: w.id, itemName: w.name, cost, isAttack: true, icon: "fas fa-crosshairs" }
     }));
   } else {
-    // 2+ weapons: Barrage with the first two
-    const w1 = weapons[0];
-    const w2 = weapons[1];
+    const w1 = weapons[0], w2 = weapons[1];
     suggestions.push(createQueueItem("barrage", {
       payload: {
         weaponId: w1.id,
         itemName: `${w1.name} + ${w2.name}`,
-        isAttack: true,
-        icon: "fas fa-bullseye"
+        isAttack: true, icon: "fas fa-bullseye"
       }
     }));
   }
-
-  // If there's a tech and budget room, suggest it
-  if (techs.length > 0 && weapons.length === 1) {
-    // 1 weapon + 1 skirmish used 2 quick actions = full budget; no room
-  } else if (techs.length > 0 && weapons.length >= 2) {
-    // Barrage used full action (2 points). Could overcharge for a tech.
-  }
-
   return suggestions;
+}
+
+export function getMountWeapons(actor, mountIndex) {
+  const mounts = actor?.system?.loadout?.weapon_mounts;
+  if (!mounts || mountIndex >= mounts.length) return [];
+  const mount = mounts[mountIndex];
+  const weapons = [];
+  for (const slot of (mount.slots ?? [])) {
+    const ref = slot.weapon;
+    if (!ref) continue;
+    let w = ref.value;
+    if (typeof w === "string") w = actor.items.get(w);
+    if (w) weapons.push(w);
+  }
+  return weapons;
 }
 
 export function getActorActions(actor) {
   if (!actor?.items) return [];
 
   const actions = [];
+  const isMech = actor.type === "mech";
+
+  if (isMech) {
+    const mounts = actor.system?.loadout?.weapon_mounts ?? [];
+    for (let mi = 0; mi < mounts.length; mi++) {
+      const mount = mounts[mi];
+      const weapons = getMountWeapons(actor, mi);
+      if (weapons.length === 0) continue;
+      const isSuperheavy = mount.type === "Superheavy";
+      const cost = isSuperheavy ? ACTION_COST.FULL : ACTION_COST.QUICK;
+      const weaponNames = weapons.map(w => w.name);
+      actions.push({
+        id: `mount:${mi}`,
+        name: `${mount.type ?? "Mount"}: ${weaponNames.join(" + ")}`,
+        category: isSuperheavy ? ACTION_CATEGORIES.FULL : ACTION_CATEGORIES.QUICK,
+        cost,
+        isAttack: true,
+        isWeapon: true,
+        isMount: true,
+        icon: isSuperheavy ? "fas fa-bullseye" : "fas fa-crosshairs",
+        mountIndex: mi,
+        mountType: mount.type,
+        weaponIds: weapons.map(w => w.id),
+        weaponNames
+      });
+    }
+  }
 
   for (const item of actor.items) {
-    if (item.type === "mech_weapon" || item.type === "pilot_weapon") {
+    if (isMech && item.type === "mech_weapon") continue;
+
+    if (item.type === "pilot_weapon") {
       actions.push({
         id: `weapon:${item.id}`,
         name: item.name,
         category: ACTION_CATEGORIES.QUICK,
+        cost: ACTION_COST.QUICK,
         isAttack: true,
         isWeapon: true,
         icon: "fas fa-crosshairs",
@@ -212,11 +308,15 @@ export function getActorActions(actor) {
 
     if (item.type === "npc_feature") {
       const featureType = item.system?.type?.toLowerCase?.();
+      const cost = resolveNpcFeatureCost(item);
+      const category = featureType === "reaction" ? ACTION_CATEGORIES.REACTION : costToCategory(cost);
+
       if (featureType === "weapon") {
         actions.push({
           id: `weapon:${item.id}`,
           name: item.name,
-          category: ACTION_CATEGORIES.QUICK,
+          category,
+          cost,
           isAttack: true,
           isWeapon: true,
           icon: "fas fa-crosshairs",
@@ -227,7 +327,8 @@ export function getActorActions(actor) {
         actions.push({
           id: `tech:${item.id}`,
           name: item.name,
-          category: ACTION_CATEGORIES.QUICK,
+          category,
+          cost,
           isAttack: true,
           isWeapon: false,
           isTech: true,
@@ -240,6 +341,7 @@ export function getActorActions(actor) {
           id: `reaction:${item.id}`,
           name: item.name,
           category: ACTION_CATEGORIES.REACTION,
+          cost: ACTION_COST.REACTION,
           isAttack: false,
           isWeapon: false,
           icon: "fas fa-bolt",
@@ -247,12 +349,14 @@ export function getActorActions(actor) {
           itemType: "npc_feature"
         });
       } else if (featureType === "system" || featureType === "trait") {
-        const hasAction = item.system?.actions?.length > 0;
+        const hasAction = item.system?.actions?.length > 0 ||
+          (item.system?.tags ?? []).some(t => TAG_COST_MAP[t.id ?? t.tag?.id]);
         if (hasAction) {
           actions.push({
             id: `system:${item.id}`,
             name: item.name,
-            category: ACTION_CATEGORIES.QUICK,
+            category,
+            cost,
             isAttack: false,
             isWeapon: false,
             icon: "fas fa-cog",
@@ -266,15 +370,35 @@ export function getActorActions(actor) {
     if (item.type === "mech_system") {
       const hasAction = item.system?.actions?.length > 0;
       if (hasAction) {
+        const cost = resolveMechActionCost(item);
         actions.push({
           id: `system:${item.id}`,
           name: item.name,
-          category: ACTION_CATEGORIES.QUICK,
+          category: costToCategory(cost),
+          cost,
           isAttack: false,
           isWeapon: false,
           icon: "fas fa-cog",
           itemId: item.id,
           itemType: "mech_system"
+        });
+      }
+    }
+
+    if (item.type === "pilot_gear") {
+      const hasAction = item.system?.actions?.length > 0;
+      if (hasAction) {
+        const cost = resolveMechActionCost(item);
+        actions.push({
+          id: `system:${item.id}`,
+          name: item.name,
+          category: costToCategory(cost),
+          cost,
+          isAttack: false,
+          isWeapon: false,
+          icon: "fas fa-toolbox",
+          itemId: item.id,
+          itemType: "pilot_gear"
         });
       }
     }
