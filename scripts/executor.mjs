@@ -22,6 +22,29 @@ export async function fireQueue(holder) {
 }
 
 /**
+ * Set the user's token targets from queue payload, execute a callback,
+ * then restore the original targets. This pre-fills the AccDiffHUD
+ * with the GM's chosen targets — the dialog still opens for confirmation.
+ */
+async function withQueueTargets(payload, fn) {
+  const targetIds = payload?.targetIds;
+  if (!targetIds?.length || !canvas?.tokens) return await fn();
+
+  const originalTargets = new Set(game.user.targets.ids);
+  try {
+    const tokens = targetIds
+      .map(id => canvas.tokens.get(id))
+      .filter(t => t != null);
+    if (tokens.length > 0) {
+      game.user.updateTokenTargets(tokens.map(t => t.id));
+    }
+    return await fn();
+  } finally {
+    game.user.updateTokenTargets([...originalTargets]);
+  }
+}
+
+/**
  * Execute a single queued action by dispatching to the right LANCER flow.
  * Returns false if the user cancelled or the flow was aborted.
  */
@@ -57,7 +80,7 @@ async function executeItem(holder, item) {
   // Tech actions
   if (actionId === "quick-tech" || actionId === "full-tech") {
     if (typeof actor.beginBasicTechAttackFlow === "function") {
-      return await actor.beginBasicTechAttackFlow();
+      return await withQueueTargets(item.payload, () => actor.beginBasicTechAttackFlow());
     }
     postFallbackCard(holder, item);
     return true;
@@ -101,13 +124,13 @@ async function executeItemAction(actor, queueItem) {
   if (item.type === "mech_weapon" || item.type === "pilot_weapon" ||
       (item.type === "npc_feature" && item.system?.type?.toLowerCase?.() === "weapon")) {
     if (typeof item.beginWeaponAttackFlow === "function") {
-      return await item.beginWeaponAttackFlow();
+      return await withQueueTargets(queueItem.payload, () => item.beginWeaponAttackFlow());
     }
   }
 
   if (item.type === "npc_feature" && item.system?.type?.toLowerCase?.() === "tech") {
     if (typeof item.beginTechAttackFlow === "function") {
-      return await item.beginTechAttackFlow();
+      return await withQueueTargets(queueItem.payload, () => item.beginTechAttackFlow());
     }
   }
 
@@ -133,7 +156,7 @@ async function executeMountAction(actor, queueItem) {
   }
   for (const weapon of weapons) {
     if (typeof weapon.beginWeaponAttackFlow === "function") {
-      await weapon.beginWeaponAttackFlow();
+      await withQueueTargets(queueItem.payload, () => weapon.beginWeaponAttackFlow());
     }
   }
   return true;
@@ -150,13 +173,13 @@ async function executeWeaponAction(actor, queueItem) {
   if (weaponId) {
     const weapon = actor.items.get(weaponId);
     if (weapon && typeof weapon.beginWeaponAttackFlow === "function") {
-      return await weapon.beginWeaponAttackFlow();
+      return await withQueueTargets(queueItem.payload, () => weapon.beginWeaponAttackFlow());
     }
     ui.notifications.warn(`Weapon not found on ${actor.name}.`);
   }
 
   if (typeof actor.beginBasicAttackFlow === "function") {
-    return await actor.beginBasicAttackFlow(queueItem.actionId);
+    return await withQueueTargets(queueItem.payload, () => actor.beginBasicAttackFlow(queueItem.actionId));
   }
 
   return false;
@@ -170,7 +193,7 @@ async function executeBasicAttack(actor, queueItem) {
   const title = def ? game.i18n.localize(`ACTIONQUEUE.Actions.${queueItem.actionId}`) : queueItem.actionId;
 
   if (typeof actor.beginBasicAttackFlow === "function") {
-    return await actor.beginBasicAttackFlow(title);
+    return await withQueueTargets(queueItem.payload, () => actor.beginBasicAttackFlow(title));
   }
 
   return false;
