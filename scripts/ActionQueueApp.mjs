@@ -231,6 +231,7 @@ export class ActionQueueApp extends Application {
 
   activateListeners(html) {
     super.activateListeners(html);
+    this._paintMode = false;
 
     html.find(".aq-combatant").on("click", this._onSelectCombatant.bind(this));
     html.find(".aq-filter-btn").on("click", this._onFilterCategory.bind(this));
@@ -248,8 +249,10 @@ export class ActionQueueApp extends Application {
       this._showTargetPicker(ev.currentTarget.dataset.itemId);
     });
     html.find(".aq-suggest-btn").on("click", this._onAutoSuggest.bind(this));
+    html.find(".aq-paint-targets-btn").on("click", this._onPaintTargets.bind(this));
 
     this._initQueueDragDrop(html);
+    this._initPaletteDragDrop(html);
   }
 
   _onSelectCombatant(event) {
@@ -778,6 +781,162 @@ export class ActionQueueApp extends Application {
     }
     ui.notifications.info(game.i18n.format("ACTIONQUEUE.Suggest.Applied", { count: suggestions.length }));
     this.render(false);
+  }
+
+  _initPaletteDragDrop(html) {
+    const cards = html.find(".aq-action-card");
+    cards.each((_, card) => {
+      card.setAttribute("draggable", "true");
+      card.addEventListener("dragstart", (e) => {
+        const data = {
+          type: "palette-action",
+          actionId: card.dataset.actionId,
+          actorAction: card.dataset.actorAction === "true",
+          icon: card.dataset.icon || "",
+          cost: card.dataset.cost || ""
+        };
+        e.dataTransfer.setData("application/json", JSON.stringify(data));
+        e.dataTransfer.effectAllowed = "copy";
+        card.classList.add("dragging");
+      });
+      card.addEventListener("dragend", () => {
+        card.classList.remove("dragging");
+      });
+    });
+
+    const dropZone = html.find('[data-drop-zone="queue"]')[0];
+    if (!dropZone) return;
+
+    dropZone.addEventListener("dragover", (e) => {
+      // Accept palette drops
+      if (e.dataTransfer.types.includes("application/json")) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+        dropZone.classList.add("aq-drop-active");
+      }
+    });
+    dropZone.addEventListener("dragleave", (e) => {
+      if (!dropZone.contains(e.relatedTarget)) {
+        dropZone.classList.remove("aq-drop-active");
+      }
+    });
+    dropZone.addEventListener("drop", async (e) => {
+      dropZone.classList.remove("aq-drop-active");
+      let data;
+      try { data = JSON.parse(e.dataTransfer.getData("application/json")); } catch { return; }
+      if (data?.type !== "palette-action") return;
+      e.preventDefault();
+
+      const holder = resolveHolder(this.selectedHolderId);
+      if (!holder || !canEditCombatant(holder)) return;
+
+      if (data.actorAction) {
+        const actorDef = (this._actorActionsCache ?? []).find(a => a.id === data.actionId);
+        const payload = {
+          itemName: actorDef?.name ?? data.actionId,
+          cost: actorDef?.cost ?? ACTION_COST.QUICK,
+          isAttack: !!actorDef?.isAttack,
+          icon: actorDef?.icon ?? "fas fa-cog"
+        };
+        if (actorDef?.itemId) payload.itemId = actorDef.itemId;
+        if (actorDef?.isMount) {
+          payload.mountIndex = actorDef.mountIndex;
+          payload.weaponIds = actorDef.weaponIds;
+        }
+        if (actorDef?.actionIndex != null) payload.actionIndex = actorDef.actionIndex;
+        await addItem(holder, data.actionId, { payload, notes: "" });
+        this.render(false);
+        return;
+      }
+
+      const def = getActionDef(data.actionId);
+      if (!def) return;
+
+      // For non-attack standard actions, skip the config dialog entirely
+      if (!def.isAttack && def.id !== "custom") {
+        await addItem(holder, data.actionId, { payload: {}, notes: "" });
+        this.render(false);
+        return;
+      }
+
+      // Attacks and custom actions still need config
+      const config = await this._showConfigDialog({ actionDef: def, holder });
+      if (!config) return;
+      await addItem(holder, data.actionId, { payload: config.payload, notes: config.notes });
+      this.render(false);
+    });
+  }
+
+  async _onPaintTargets(event) {
+    event.preventDefault();
+    const holder = resolveHolder(this.selectedHolderId);
+    if (!holder || !canEditCombatant(holder)) return;
+    const queue = getQueue(holder);
+    if (queue.length === 0) {
+      ui.notifications.info("Queue is empty.");
+      return;
+    }
+
+    const btn = event.currentTarget;
+    const $btn = $(btn);
+
+    if ($btn.hasClass("painting")) {
+      // Apply mode — gather selected items and canvas targets, then apply
+      const selectedIds = [];
+      this.element.find(".aq-queue-item.aq-paint-selected").each((_, el) => {
+        selectedIds.push(el.dataset.itemId);
+      });
+
+      if (selectedIds.length === 0) {
+        ui.notifications.warn("Click queue items to select them first.");
+        return;
+      }
+
+      const targeted = [...(game.user?.targets ?? [])];
+      const controlled = canvas.tokens?.controlled ?? [];
+      const tokens = targeted.length > 0 ? targeted : controlled;
+
+      if (tokens.length === 0) {
+        ui.notifications.warn("Target or select tokens on the canvas first.");
+        return;
+      }
+
+      const targetIds = tokens.map(t => t.id);
+      const targetNames = tokens.map(t => t.name);
+      const items = queue.filter(i => selectedIds.includes(i.id));
+
+      for (const item of items) {
+        await updateItem(holder, item.id, {
+          payload: { ...item.payload, targetIds, targetNames }
+        });
+      }
+
+      ui.notifications.info(`Painted ${targetNames.join(", ")} onto ${items.length} action(s).`);
+      this._exitPaintMode();
+      this.render(false);
+      return;
+    }
+
+    // Enter painting mode
+    this._paintMode = true;
+    $btn.addClass("painting");
+    $btn.html('<i class="fas fa-check"></i> Apply');
+    ui.notifications.info("Click queue items to select them, target tokens on canvas, then click Apply.");
+
+    // Make queue items clickable for selection
+    this.element.find(".aq-queue-item").on("click.paint", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      $(ev.currentTarget).toggleClass("aq-paint-selected");
+    });
+  }
+
+  _exitPaintMode() {
+    this._paintMode = false;
+    const $btn = this.element.find(".aq-paint-targets-btn");
+    $btn.removeClass("painting");
+    $btn.html('<i class="fas fa-crosshairs"></i>');
+    this.element.find(".aq-queue-item").off("click.paint").removeClass("aq-paint-selected");
   }
 
   _initQueueDragDrop(html) {

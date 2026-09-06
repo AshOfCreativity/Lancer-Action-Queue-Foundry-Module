@@ -83,6 +83,9 @@
             <button type="button" class="aq-btn aq-suggest-btn" title="{{localize "ACTIONQUEUE.Suggest.Button"}}">
               <i class="fas fa-magic"></i>
             </button>
+            <button type="button" class="aq-btn aq-paint-targets-btn" title="Paint targets on canvas for all attacks">
+              <i class="fas fa-crosshairs"></i>
+            </button>
             <button type="button" class="aq-btn aq-clear-btn">{{localize "ACTIONQUEUE.Queue.Clear"}}</button>
             <button type="button" class="aq-btn aq-btn-primary aq-fire-btn">
               <i class="fas fa-play"></i> {{localize "ACTIONQUEUE.Queue.Fire"}}
@@ -103,9 +106,9 @@
       </div>
     {{/if}}
 
-    <div class="aq-queue-list">
+    <div class="aq-queue-list" data-drop-zone="queue">
       {{#if queueIsEmpty}}
-        <div class="aq-queue-empty">{{localize "ACTIONQUEUE.Queue.Empty"}}</div>
+        <div class="aq-queue-empty">{{localize "ACTIONQUEUE.Queue.Empty"}}<br/><span class="aq-drop-hint">Drag actions here</span></div>
       {{else}}
         {{#each queueItems}}
           <div class="aq-queue-item {{this.status}}" data-item-id="{{this.id}}" draggable="true">
