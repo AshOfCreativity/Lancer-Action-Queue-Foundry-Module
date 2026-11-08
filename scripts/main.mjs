@@ -1,6 +1,7 @@
-import { MODULE_ID, suggestDefaultQueue, computeActionEconomy } from "./constants.mjs";
+import { MODULE_ID, suggestDefaultQueue, computeActionEconomy, getActorActions } from "./constants.mjs";
 import { ActionQueueApp } from "./ActionQueueApp.mjs";
-import { fireQueue } from "./executor.mjs";
+import { HudApp, registerHudSettings } from "./HudApp.mjs";
+import { fireQueue, executeItem } from "./executor.mjs";
 import {
   getQueue,
   addItem,
@@ -12,11 +13,38 @@ import {
 } from "./queue-store.mjs";
 
 let app = null;
+let hud = null;
 
 function openApp({ combatantId } = {}) {
   if (!app) app = new ActionQueueApp();
   if (combatantId) app.selectedHolderId = combatantId;
   app.render(true);
+}
+
+function openHud() {
+  if (!hud) hud = new HudApp();
+  hud.render(true);
+}
+
+function closeHud() {
+  if (hud?.rendered) hud.close();
+  hud = null;
+}
+
+function toggleHud() {
+  if (hud?.rendered) closeHud();
+  else openHud();
+}
+
+async function fireAction(holder, actionId, payload = {}) {
+  if (!holder || !actionId) return false;
+  const item = { id: foundry.utils.randomID(), actionId, payload, status: "pending" };
+  const result = await executeItem(holder, item);
+  if (result !== false) {
+    if (holder.setFlag) await addItem(holder, { ...item, status: "fired" });
+    return true;
+  }
+  return false;
 }
 
 function addSceneControlButton(controls) {
@@ -28,6 +56,13 @@ function addSceneControlButton(controls) {
     icon: "fas fa-list-ol",
     button: true,
     onClick: () => openApp()
+  });
+  tokenControl.tools.push({
+    name: "lancer-action-hud",
+    title: "LANCER Action HUD",
+    icon: "fas fa-th",
+    button: true,
+    onClick: () => toggleHud()
   });
 }
 
@@ -55,23 +90,42 @@ function decorateCombatTracker(_app, html) {
   });
 }
 
-/** Re-render the open app when a combatant's queue flag changes. */
 function onCombatantUpdate(combatant, changes) {
   const flagPath = `flags.${MODULE_ID}`;
   if (!foundry.utils.hasProperty(changes, flagPath)) return;
   if (app?.rendered) app.render(false);
+  if (hud?.rendered) hud.render(false);
 }
 
 function onCombatChange() {
   if (app?.rendered) app.render(false);
+  if (hud?.rendered) hud.render(false);
+}
+
+function onControlToken() {
+  if (hud?.rendered) hud.render(false);
+}
+
+function onUpdateActor(actor) {
+  if (!hud?.rendered) return;
+  const token = canvas?.tokens?.controlled?.[0];
+  if (token?.actor?.id === actor.id || game.user.character?.id === actor.id) {
+    hud.render(false);
+  }
 }
 
 Hooks.once("init", () => {
   console.log(`${MODULE_ID} | Initializing`);
+  registerHudSettings();
 
   game.modules.get(MODULE_ID).api = {
     open: openApp,
+    openHud,
+    closeHud,
+    toggleHud,
     fireQueue,
+    fireAction,
+    getActorActions,
     suggestDefaultQueue,
     computeActionEconomy,
     queue: {
@@ -97,3 +151,8 @@ Hooks.on("createCombatant", onCombatChange);
 Hooks.on("deleteCombatant", onCombatChange);
 Hooks.on("updateCombat", onCombatChange);
 Hooks.on("deleteCombat", onCombatChange);
+Hooks.on("controlToken", onControlToken);
+Hooks.on("updateActor", onUpdateActor);
+Hooks.on("updateItem", (item) => {
+  if (item.actor) onUpdateActor(item.actor);
+});

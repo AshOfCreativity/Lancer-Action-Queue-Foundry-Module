@@ -48,7 +48,7 @@ async function withQueueTargets(payload, fn) {
  * Execute a single queued action by dispatching to the right LANCER flow.
  * Returns false if the user cancelled or the flow was aborted.
  */
-async function executeItem(holder, item) {
+export async function executeItem(holder, item) {
   const actor = holder.actor;
   if (!actor) {
     postFallbackCard(holder, item, "No actor linked to combatant");

@@ -1,0 +1,69 @@
+{{#if noActor}}
+<div class="ah-root ah-empty">
+  <span>Select a token to begin.</span>
+</div>
+{{else}}
+<div class="ah-root {{#if collapsed}}collapsed{{/if}}" data-actor-id="{{actorId}}">
+  <div class="ah-header">
+    <img class="ah-portrait" src="{{actorImg}}" alt="{{actorName}}" />
+    <div class="ah-identity">
+      <div class="ah-name">{{actorName}}</div>
+      <div class="ah-economy {{#if economy.overBudget}}over-budget{{/if}}">
+        {{economy.pointsUsed}}/{{economy.totalBudget}} AP{{#if economy.reactionsUsed}} · {{economy.reactionsUsed}} R{{/if}}{{#if economy.protocolsUsed}} · {{economy.protocolsUsed}} P{{/if}}
+      </div>
+    </div>
+    <div class="ah-header-ctrls">
+      <button class="ah-lock" title="{{#if locked}}Unlock to drag{{else}}Lock{{/if}}">
+        <i class="fas {{#if locked}}fa-lock{{else}}fa-lock-open{{/if}}"></i>
+      </button>
+      <button class="ah-collapse" title="{{#if collapsed}}Expand{{else}}Collapse{{/if}}">
+        <i class="fas {{#if collapsed}}fa-chevron-down{{else}}fa-chevron-up{{/if}}"></i>
+      </button>
+    </div>
+  </div>
+
+  {{#unless collapsed}}
+  <div class="ah-macros-row" title="Drag a macro here to add it">
+    {{#each macros as |m|}}
+    <div class="ah-macro" data-macro-id="{{m.id}}" title="{{m.name}}">
+      <img src="{{m.img}}" alt="{{m.name}}" />
+      <span class="ah-macro-name">{{m.name}}</span>
+      {{#if ../locked}}{{else}}<button class="ah-macro-remove" title="Remove"><i class="fas fa-times"></i></button>{{/if}}
+    </div>
+    {{else}}
+    <div class="ah-macros-placeholder">Drag macros here</div>
+    {{/each}}
+  </div>
+
+  <div class="ah-body">
+    {{#each groups as |g|}}
+    <div class="ah-group" data-group="{{g.key}}">
+      <div class="ah-group-label">{{g.label}}</div>
+      <div class="ah-group-actions">
+        {{#each g.actions as |a|}}
+        <button class="ah-action" data-action-id="{{a.actionId}}" data-label="{{a.label}}" title="{{a.label}} (Shift-click to queue, right-click to open sheet)">
+          <i class="{{a.icon}}"></i>
+          <span>{{a.label}}</span>
+        </button>
+        {{/each}}
+      </div>
+    </div>
+    {{/each}}
+
+    {{#each standard as |g|}}
+    <div class="ah-group ah-standard" data-group="std-{{g.key}}">
+      <div class="ah-group-label">{{g.label}}</div>
+      <div class="ah-group-actions">
+        {{#each g.actions as |a|}}
+        <button class="ah-action" data-action-id="{{a.actionId}}" data-label="{{a.label}}" title="{{a.label}} (Shift-click to queue)">
+          <i class="{{a.icon}}"></i>
+          <span>{{a.label}}</span>
+        </button>
+        {{/each}}
+      </div>
+    </div>
+    {{/each}}
+  </div>
+  {{/unless}}
+</div>
+{{/if}}

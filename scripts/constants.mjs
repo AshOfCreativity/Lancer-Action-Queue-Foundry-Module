@@ -372,28 +372,38 @@ export function getActorActions(actor) {
           itemId: item.id,
           itemType: "npc_feature"
         });
-      } else if (featureType === "system" || featureType === "trait") {
-        const hasAction = item.system?.actions?.length > 0 ||
-          (item.system?.tags ?? []).some(t => TAG_COST_MAP[t.id ?? t.tag?.id]);
-        if (hasAction) {
-          actions.push({
-            id: `system:${item.id}`,
-            name: item.name,
-            category,
-            cost,
-            isAttack: false,
-            isWeapon: false,
-            icon: "fas fa-cog",
-            itemId: item.id,
-            itemType: "npc_feature"
-          });
-        }
+      } else if (featureType === "system") {
+        actions.push({
+          id: `system:${item.id}`,
+          name: item.name,
+          category,
+          cost,
+          isAttack: false,
+          isWeapon: false,
+          icon: "fas fa-cog",
+          itemId: item.id,
+          itemType: "npc_feature"
+        });
+      } else if (featureType === "trait") {
+        actions.push({
+          id: `system:${item.id}`,
+          name: item.name,
+          category: ACTION_CATEGORIES.FREE,
+          cost: ACTION_COST.FREE,
+          isAttack: false,
+          isWeapon: false,
+          icon: "fas fa-book-open",
+          itemId: item.id,
+          itemType: "npc_feature"
+        });
       }
     }
 
     if (item.type === "mech_system") {
-      const hasAction = item.system?.actions?.length > 0;
-      if (hasAction) {
+      const hasActivation = item.system?.actions?.length > 0 ||
+        (item.system?.deployables?.length > 0) ||
+        (item.system?.tags ?? []).some(t => TAG_COST_MAP[t.id ?? t.tag?.id]);
+      if (hasActivation) {
         const cost = resolveMechActionCost(item);
         actions.push({
           id: `system:${item.id}`,
@@ -410,8 +420,9 @@ export function getActorActions(actor) {
     }
 
     if (item.type === "pilot_gear") {
-      const hasAction = item.system?.actions?.length > 0;
-      if (hasAction) {
+      const hasActivation = item.system?.actions?.length > 0 ||
+        (item.system?.tags ?? []).some(t => TAG_COST_MAP[t.id ?? t.tag?.id]);
+      if (hasActivation) {
         const cost = resolveMechActionCost(item);
         actions.push({
           id: `system:${item.id}`,

@@ -495,3 +495,233 @@
   background: #2a2a2a;
   border-radius: 3px;
 }
+
+/* ===== Action HUD (TAH-style) ===== */
+#lancer-action-hud {
+  position: fixed;
+  left: 80px;
+  bottom: 80px;
+  z-index: 70;
+  max-width: 420px;
+  pointer-events: none;
+}
+
+.ah-root {
+  pointer-events: auto;
+  background: rgba(20, 20, 24, 0.95);
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  color: #d8d8d8;
+  font-family: var(--font-primary, sans-serif);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  min-width: 240px;
+  overflow: hidden;
+}
+
+.ah-empty {
+  pointer-events: auto;
+  padding: 6px 10px;
+  color: #888;
+  font-size: 12px;
+  border: 1px dashed #444;
+}
+
+.ah-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid #2a2a2a;
+  background: #141418;
+  user-select: none;
+}
+
+.ah-portrait {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  object-fit: cover;
+  border: 1px solid #444;
+  flex: 0 0 auto;
+}
+
+.ah-identity {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ah-name {
+  font-weight: 600;
+  color: #f0f0f0;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ah-economy {
+  font-size: 11px;
+  color: #a0a0a0;
+}
+
+.ah-economy.over-budget {
+  color: #ff6b6b;
+}
+
+.ah-header-ctrls {
+  display: flex;
+  gap: 4px;
+}
+
+.ah-header-ctrls button {
+  background: #2a2a2a;
+  color: #ddd;
+  border: 1px solid #3a3a3a;
+  width: 24px;
+  height: 24px;
+  border-radius: 3px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.ah-header-ctrls button:hover {
+  background: #3a3a3a;
+  color: #fff;
+}
+
+.ah-macros-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 6px 8px;
+  background: #18181c;
+  border-bottom: 1px solid #2a2a2a;
+  min-height: 36px;
+}
+
+.ah-macros-row.drag-over {
+  background: rgba(243, 156, 18, 0.15);
+  outline: 1px dashed #f39c12;
+  outline-offset: -2px;
+}
+
+.ah-macros-placeholder {
+  color: #666;
+  font-size: 11px;
+  font-style: italic;
+  padding: 4px 2px;
+}
+
+.ah-macro {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #262626;
+  border: 1px solid #3a3a3a;
+  border-radius: 3px;
+  padding: 2px 4px 2px 2px;
+  cursor: pointer;
+  max-width: 160px;
+  position: relative;
+}
+
+.ah-macro:hover {
+  background: #3a3a3a;
+}
+
+.ah-macro img {
+  width: 20px;
+  height: 20px;
+  border-radius: 2px;
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+
+.ah-macro-name {
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ah-macro-remove {
+  background: none;
+  border: 0;
+  color: #888;
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 10px;
+}
+
+.ah-macro-remove:hover {
+  color: #ff6b6b;
+}
+
+.ah-body {
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.ah-group-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #888;
+  margin-bottom: 2px;
+}
+
+.ah-group-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.ah-action {
+  background: #262626;
+  border: 1px solid #3a3a3a;
+  color: #ddd;
+  padding: 4px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ah-action:hover {
+  background: #3a3a3a;
+  border-color: #555;
+  color: #fff;
+}
+
+.ah-action i {
+  width: 10px;
+  flex: 0 0 auto;
+}
+
+.ah-action span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ah-standard .ah-action {
+  border-color: #4a4a4a;
+  background: #202024;
+}
+
+.ah-root.collapsed .ah-body,
+.ah-root.collapsed .ah-macros-row {
+  display: none;
+}
