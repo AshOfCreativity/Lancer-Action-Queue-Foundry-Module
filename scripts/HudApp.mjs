@@ -208,7 +208,7 @@ export class HudApp extends Application {
   }
 
   _isLocked() {
-    return game.settings.get(MODULE_ID, HUD_SETTINGS.LOCKED) ?? true;
+    return game.settings.get(MODULE_ID, HUD_SETTINGS.LOCKED) ?? false;
   }
 
   async _toggleLocked() {
@@ -371,7 +371,7 @@ export function registerHudSettings() {
     scope: "client",
     config: false,
     type: Boolean,
-    default: true
+    default: false
   });
   game.settings.register(MODULE_ID, HUD_SETTINGS.COLLAPSED, {
     scope: "client",
