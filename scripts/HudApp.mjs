@@ -69,6 +69,34 @@ export class HudApp extends Application {
     });
   }
 
+  // Override Foundry's default mount point so the HUD floats on <body>
+  // rather than taking a slot in the main UI tree.
+  async _render(force = false, options = {}) {
+    const data = await this.getData();
+    const html = $(await renderTemplate(this.options.template, data));
+    html.attr("id", this.options.id);
+
+    const existing = document.getElementById(this.options.id);
+    if (existing) existing.remove();
+
+    document.body.appendChild(html[0]);
+    this._element = html;
+    this._state = Application.RENDER_STATES.RENDERED;
+    this.activateListeners(html);
+    Hooks.callAll("renderHudApp", this, html, data);
+  }
+
+  async close(options = {}) {
+    const el = document.getElementById(this.options.id);
+    if (el) el.remove();
+    this._element = null;
+    this._state = Application.RENDER_STATES.CLOSED;
+  }
+
+  get rendered() {
+    return this._state === Application.RENDER_STATES.RENDERED;
+  }
+
   getData() {
     const { token, actor } = resolveSelectedActor();
     if (!actor) {

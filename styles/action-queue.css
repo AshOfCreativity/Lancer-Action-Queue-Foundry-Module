@@ -496,24 +496,30 @@
   border-radius: 3px;
 }
 
-/* ===== Action HUD (TAH-style) ===== */
+/* ===== Action HUD (TAH-style, free-floating on body) ===== */
 #lancer-action-hud {
-  position: fixed;
+  position: fixed !important;
   left: 80px;
   bottom: 80px;
-  z-index: 70;
+  top: auto;
+  right: auto;
+  width: auto;
+  height: auto;
+  min-width: 240px;
   max-width: 420px;
-  pointer-events: none;
-}
-
-.ah-root {
-  pointer-events: auto;
+  z-index: 70;
   background: rgba(20, 20, 24, 0.95);
   border: 1px solid #3a3a3a;
   border-radius: 6px;
   color: #d8d8d8;
   font-family: var(--font-primary, sans-serif);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  display: block;
+  pointer-events: auto;
+}
+
+.ah-root {
   min-width: 240px;
   overflow: hidden;
 }
