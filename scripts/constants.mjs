@@ -168,79 +168,54 @@ export function computeActionEconomy(queue, actor) {
   };
 }
 
-export function suggestDefaultQueue(actor) {
-  if (!actor?.items) return [];
-  const suggestions = [];
+/**
+ * Build a near-complete queue for an actor's upcoming turn.
+ *
+ * Options:
+ *   autoTarget      - fill payload.targetIds with the nearest visible hostile
+ *                     within weapon range. Default true.
+ *   pickRecharges   - include charged NPC recharge features. Default true.
+ *   includeProtocols- lead with a protocol feature if the actor has one. Default true.
+ *   tierAccuracy    - pre-fill payload.accuracy from the NPC's tier
+ *                     (max(0, tier - 1), capped at 2). Default true.
+ *   sourceToken     - override the Token used for distance / LOS checks.
+ *   maxItems        - hard cap on returned items. Default 8.
+ *
+ * Returns an array of queue items; the caller writes them to a holder.
+ * All behaviour is deterministic given the same canvas state.
+ */
+export function suggestForActor(actor, options = {}) {
+  const {
+    autoTarget = true,
+    pickRecharges = true,
+    includeProtocols = true,
+    tierAccuracy = true,
+    sourceToken = null,
+    maxItems = 8
+  } = options;
 
-  if (actor.type === "mech") {
-    const mounts = actor.system?.loadout?.weapon_mounts ?? [];
-    const loaded = [];
-    for (let mi = 0; mi < mounts.length; mi++) {
-      const weapons = getMountWeapons(actor, mi);
-      if (weapons.length > 0) loaded.push({ index: mi, mount: mounts[mi], weapons });
-    }
-    if (loaded.length === 0) return suggestions;
+  const items = [];
+  if (!actor?.items) return items;
 
-    const superheavy = loaded.find(m => m.mount.type === "Superheavy");
-    if (superheavy) {
-      suggestions.push(createQueueItem(`mount:${superheavy.index}`, {
-        payload: {
-          mountIndex: superheavy.index,
-          itemName: superheavy.weapons.map(w => w.name).join(" + "),
-          cost: ACTION_COST.FULL, isAttack: true, icon: "fas fa-bullseye"
-        }
-      }));
-    } else if (loaded.length === 1) {
-      const m = loaded[0];
-      for (let i = 0; i < 2; i++) {
-        suggestions.push(createQueueItem(`mount:${m.index}`, {
-          payload: {
-            mountIndex: m.index,
-            itemName: m.weapons.map(w => w.name).join(" + "),
-            cost: ACTION_COST.QUICK, isAttack: true, icon: "fas fa-crosshairs"
-          }
-        }));
+  const token = sourceToken ?? resolveActorToken(actor);
+  const tier = getActorTier(actor);
+  const accuracy = tierAccuracy ? Math.max(0, Math.min(2, (tier ?? 1) - 1)) : 0;
+  const hostiles = token ? gatherHostileTokens(token) : [];
+
+  const pushAttackItem = (actionId, payload, weapon) => {
+    if (autoTarget && token && hostiles.length > 0 && weapon) {
+      const range = computeWeaponRange(weapon);
+      const target = pickNearestInRange(token, hostiles, range);
+      if (target) {
+        payload.targetIds = [target.id];
+        payload.targetNames = [target.name];
       }
-    } else {
-      const m1 = loaded[0], m2 = loaded[1];
-      suggestions.push(createQueueItem("barrage", {
-        payload: {
-          mountIndices: [m1.index, m2.index],
-          itemName: `${m1.weapons.map(w => w.name).join("+")} + ${m2.weapons.map(w => w.name).join("+")}`,
-          cost: ACTION_COST.FULL, isAttack: true, icon: "fas fa-bullseye"
-        }
-      }));
     }
-    return suggestions;
-  }
+    if (accuracy > 0 && payload.accuracy == null) payload.accuracy = accuracy;
+    items.push(createQueueItem(actionId, { payload }));
+  };
 
-  const weapons = [];
-  for (const item of actor.items) {
-    if (item.type === "pilot_weapon") weapons.push(item);
-    else if (item.type === "npc_feature" && item.system?.type?.toLowerCase?.() === "weapon") weapons.push(item);
-  }
-  if (weapons.length === 0) return suggestions;
-
-  if (weapons.length === 1) {
-    const w = weapons[0];
-    const cost = w.type === "npc_feature" ? resolveNpcFeatureCost(w) : ACTION_COST.QUICK;
-    suggestions.push(createQueueItem(`weapon:${w.id}`, {
-      payload: { itemId: w.id, itemName: w.name, cost, isAttack: true, icon: "fas fa-crosshairs" }
-    }));
-    suggestions.push(createQueueItem(`weapon:${w.id}`, {
-      payload: { itemId: w.id, itemName: w.name, cost, isAttack: true, icon: "fas fa-crosshairs" }
-    }));
-  } else {
-    const w1 = weapons[0], w2 = weapons[1];
-    suggestions.push(createQueueItem("barrage", {
-      payload: {
-        weaponId: w1.id,
-        itemName: `${w1.name} + ${w2.name}`,
-        isAttack: true, icon: "fas fa-bullseye"
-      }
-    }));
-  }
-
+  // ---- Deployables ----
   if (actor.type === "deployable") {
     const sysActions = actor.system?.actions ?? [];
     for (let ai = 0; ai < sysActions.length; ai++) {
@@ -250,20 +225,305 @@ export function suggestDefaultQueue(actor) {
       const cost = ACTIVATION_MAP[activation] || ACTION_COST.QUICK;
       if (cost === ACTION_COST.REACTION || cost === ACTION_COST.PROTOCOL) continue;
       const isAttack = (action.damage?.length > 0) || (action.range?.length > 0);
-      suggestions.push(createQueueItem(`deployable:${ai}`, {
-        payload: {
-          actionIndex: ai,
-          itemName: action.name,
-          cost,
-          isAttack,
-          icon: isAttack ? "fas fa-crosshairs" : "fas fa-cog"
-        }
-      }));
+      const payload = {
+        actionIndex: ai, itemName: action.name, cost, isAttack,
+        icon: isAttack ? "fas fa-crosshairs" : "fas fa-cog"
+      };
+      const weaponShim = isAttack ? { system: { range: action.range ?? [] } } : null;
+      if (isAttack) pushAttackItem(`deployable:${ai}`, payload, weaponShim);
+      else items.push(createQueueItem(`deployable:${ai}`, { payload }));
     }
-    return suggestions;
+    return items.slice(0, maxItems);
   }
 
-  return suggestions;
+  // ---- Mechs ----
+  if (actor.type === "mech") {
+    const mounts = actor.system?.loadout?.weapon_mounts ?? [];
+    const loaded = [];
+    for (let mi = 0; mi < mounts.length; mi++) {
+      const weapons = getMountWeapons(actor, mi);
+      if (weapons.length > 0) loaded.push({ index: mi, mount: mounts[mi], weapons });
+    }
+
+    if (loaded.length > 0) {
+      const superheavy = loaded.find(m => m.mount.type === "Superheavy");
+      if (superheavy) {
+        pushAttackItem(`mount:${superheavy.index}`, {
+          mountIndex: superheavy.index,
+          itemName: superheavy.weapons.map(w => w.name).join(" + "),
+          cost: ACTION_COST.FULL, isAttack: true, icon: "fas fa-bullseye"
+        }, superheavy.weapons[0]);
+      } else if (loaded.length === 1) {
+        const m = loaded[0];
+        const name = m.weapons.map(w => w.name).join(" + ");
+        for (let i = 0; i < 2; i++) {
+          pushAttackItem(`mount:${m.index}`, {
+            mountIndex: m.index, itemName: name,
+            cost: ACTION_COST.QUICK, isAttack: true, icon: "fas fa-crosshairs"
+          }, m.weapons[0]);
+        }
+      } else {
+        const m1 = loaded[0], m2 = loaded[1];
+        const payload = {
+          mountIndices: [m1.index, m2.index],
+          itemName: `${m1.weapons.map(w => w.name).join("+")} + ${m2.weapons.map(w => w.name).join("+")}`,
+          cost: ACTION_COST.FULL, isAttack: true, icon: "fas fa-bullseye"
+        };
+        // Target the closer hostile that both mounts can reach (conservative).
+        if (autoTarget && token && hostiles.length > 0) {
+          const shortest = Math.min(
+            computeWeaponRange(m1.weapons[0]),
+            computeWeaponRange(m2.weapons[0])
+          );
+          const target = pickNearestInRange(token, hostiles, shortest);
+          if (target) {
+            payload.targetIds = [target.id];
+            payload.targetNames = [target.name];
+          }
+        }
+        if (accuracy > 0) payload.accuracy = accuracy;
+        items.push(createQueueItem("barrage", { payload }));
+      }
+    }
+
+    if (pickRecharges) appendChargedRecharges(actor, items, { token, hostiles, autoTarget, accuracy });
+    if (includeProtocols) prependProtocol(actor, items);
+    return items.slice(0, maxItems);
+  }
+
+  // ---- Non-mech (NPCs, pilots, vehicles) ----
+  const weapons = collectActorWeapons(actor);
+
+  if (weapons.length === 1) {
+    const w = weapons[0];
+    const cost = w.type === "npc_feature" ? resolveNpcFeatureCost(w) : ACTION_COST.QUICK;
+    for (let i = 0; i < 2; i++) {
+      pushAttackItem(`weapon:${w.id}`, {
+        itemId: w.id, itemName: w.name, cost, isAttack: true, icon: "fas fa-crosshairs"
+      }, w);
+    }
+  } else if (weapons.length >= 2) {
+    // Fire each of the first two weapons as its own action. This is an
+    // effective NPC "barrage" that routes through the weapon-id executor
+    // branch, avoiding the standalone "barrage" payload that loses weapon 2.
+    for (const w of weapons.slice(0, 2)) {
+      const cost = w.type === "npc_feature" ? resolveNpcFeatureCost(w) : ACTION_COST.QUICK;
+      pushAttackItem(`weapon:${w.id}`, {
+        itemId: w.id, itemName: w.name, cost, isAttack: true, icon: "fas fa-crosshairs"
+      }, w);
+    }
+  }
+
+  if (pickRecharges) appendChargedRecharges(actor, items, { token, hostiles, autoTarget, accuracy });
+  if (includeProtocols) prependProtocol(actor, items);
+
+  return items.slice(0, maxItems);
+}
+
+/**
+ * Backward-compatible entry point. Equivalent to suggestForActor(actor, {autoTarget: true}).
+ */
+export function suggestDefaultQueue(actor) {
+  return suggestForActor(actor, { autoTarget: true });
+}
+
+function collectActorWeapons(actor) {
+  const weapons = [];
+  for (const item of actor.items ?? []) {
+    if (item.system?.destroyed) continue;
+    if (item.type === "pilot_weapon") weapons.push(item);
+    else if (item.type === "npc_feature" && item.system?.type?.toLowerCase?.() === "weapon") weapons.push(item);
+  }
+  return weapons;
+}
+
+function hasRechargeTag(item) {
+  const tags = item.system?.tags ?? [];
+  return tags.some(t => (t.lid ?? t.id ?? t.tag?.id ?? t.tag?.lid) === "tg_recharge");
+}
+
+function appendChargedRecharges(actor, items, ctx) {
+  for (const item of actor.items ?? []) {
+    if (item.type !== "npc_feature") continue;
+    if (item.system?.destroyed) continue;
+    if (!hasRechargeTag(item)) continue;
+    // Not yet recharged this turn — skip.
+    if (item.system?.charged === false) continue;
+    const featureType = item.system?.type?.toLowerCase?.();
+    if (featureType === "reaction") continue;
+    const cost = resolveNpcFeatureCost(item);
+    if (cost === ACTION_COST.PROTOCOL) continue;
+    // Skip if the item is already in the queue (avoids double-queueing a weapon suggestion).
+    if (items.some(it => it.payload?.itemId === item.id)) continue;
+
+    const isAttack = (featureType === "weapon" || featureType === "tech");
+    const actionId = featureType === "weapon"
+      ? `weapon:${item.id}`
+      : featureType === "tech"
+        ? `tech:${item.id}`
+        : `system:${item.id}`;
+    const payload = {
+      itemId: item.id, itemName: item.name, cost, isAttack,
+      icon: isAttack ? (featureType === "tech" ? "fas fa-wrench" : "fas fa-crosshairs") : "fas fa-bolt"
+    };
+    if (isAttack && ctx.autoTarget && ctx.token && ctx.hostiles.length > 0) {
+      const range = computeWeaponRange(item);
+      const target = pickNearestInRange(ctx.token, ctx.hostiles, range);
+      if (target) {
+        payload.targetIds = [target.id];
+        payload.targetNames = [target.name];
+      }
+    }
+    if (isAttack && ctx.accuracy > 0) payload.accuracy = ctx.accuracy;
+    items.push(createQueueItem(actionId, { payload }));
+  }
+}
+
+function prependProtocol(actor, items) {
+  if (items.some(it => getItemCost(it) === ACTION_COST.PROTOCOL)) return;
+  for (const item of actor.items ?? []) {
+    if (item.system?.destroyed) continue;
+    let cost = null;
+    if (item.type === "npc_feature") cost = resolveNpcFeatureCost(item);
+    else if (item.type === "mech_system" || item.type === "pilot_gear") cost = resolveMechActionCost(item);
+    if (cost !== ACTION_COST.PROTOCOL) continue;
+    if (hasRechargeTag(item) && item.system?.charged === false) continue;
+
+    items.unshift(createQueueItem(`system:${item.id}`, {
+      payload: {
+        itemId: item.id, itemName: item.name, cost: ACTION_COST.PROTOCOL,
+        isAttack: false, icon: "fas fa-bolt"
+      }
+    }));
+    return; // one protocol per turn
+  }
+}
+
+function getActorTier(actor) {
+  const raw = actor?.system?.tier;
+  if (typeof raw === "number" && Number.isFinite(raw) && raw >= 1) {
+    return Math.min(3, Math.max(1, Math.floor(raw)));
+  }
+  return null;
+}
+
+/**
+ * Resolve a Token placeable for an actor. Only returns a token on the active scene;
+ * if none is placed, targeting is simply disabled (the GM can still accept the queue).
+ */
+function resolveActorToken(actor) {
+  if (!actor) return null;
+  const placeables = globalThis.canvas?.tokens?.placeables ?? [];
+  const match = placeables.find(t => t.actor?.id === actor.id);
+  if (match) return match;
+  const linked = actor.getActiveTokens?.(true, false) ?? [];
+  if (linked[0]) return linked[0];
+  return null;
+}
+
+/**
+ * Gather currently-visible hostile Tokens relative to a source Token.
+ *
+ * Hostile = opposite disposition sign. Neutral / Secret dispositions are skipped
+ * so we never auto-target a token that could be either side. Honours visibility
+ * (so the GM's auto-pick never touches tokens hidden on the current layer) and
+ * drops combatants already flagged as defeated.
+ */
+function gatherHostileTokens(sourceToken) {
+  if (!sourceToken) return [];
+  const placeables = globalThis.canvas?.tokens?.placeables ?? [];
+  const srcDisp = sourceToken.document?.disposition ?? sourceToken.disposition ?? -1;
+  const srcSign = Math.sign(srcDisp);
+  if (srcSign === 0) return [];
+
+  const combatants = globalThis.game?.combat?.combatants?.contents ?? [];
+  const out = [];
+  for (const t of placeables) {
+    if (t.id === sourceToken.id) continue;
+    if (!t.actor) continue;
+    if (t.visible === false) continue;
+    const d = t.document?.disposition ?? t.disposition ?? 0;
+    const tgtSign = Math.sign(d);
+    if (tgtSign === 0) continue;
+    if (tgtSign === srcSign) continue;
+    const combatant = combatants.find(c => c.tokenId === t.id);
+    if (combatant?.isDefeated) continue;
+    out.push(t);
+  }
+  return out;
+}
+
+/**
+ * Longest usable range for a weapon-like item, in grid spaces. Prefers Range /
+ * Thrown types; falls back to Threat for melee. Infinity means "no range data —
+ * don't filter targets".
+ */
+function computeWeaponRange(weapon) {
+  if (!weapon) return Infinity;
+  const ranges = readWeaponRanges(weapon);
+  if (ranges.length === 0) return Infinity;
+  let best = 0;
+  for (const r of ranges) {
+    const type = r?.type ?? "";
+    if (type === "Range" || type === "Thrown") best = Math.max(best, Number(r?.val) || 0);
+  }
+  if (best > 0) return best;
+  for (const r of ranges) {
+    const type = r?.type ?? "";
+    if (type === "Threat") best = Math.max(best, Number(r?.val) || 1);
+  }
+  return best > 0 ? best : Infinity;
+}
+
+function readWeaponRanges(weapon) {
+  const sys = weapon?.system;
+  if (!sys) return [];
+  if (sys.active_profile?.range) return sys.active_profile.range;
+  if (Array.isArray(sys.range)) return sys.range;
+  if (Array.isArray(sys.profiles) && sys.profiles[0]?.range) return sys.profiles[0].range;
+  return [];
+}
+
+/**
+ * Pick the nearest hostile within maxRangeSpaces of sourceToken. Uses
+ * canvas.grid.measurePath (v12), falling back to pixel euclidean. Deterministic:
+ * ties resolve to the first in the hostiles array.
+ */
+function pickNearestInRange(sourceToken, hostiles, maxRangeSpaces) {
+  if (!hostiles?.length) return null;
+  const grid = globalThis.canvas?.grid;
+  const gridDist = grid?.distance ?? 1;
+  const maxDist = maxRangeSpaces === Infinity ? Infinity : maxRangeSpaces * gridDist;
+
+  const srcCenter = sourceToken.center ?? { x: sourceToken.x, y: sourceToken.y };
+  let best = null;
+  let bestDist = Infinity;
+  for (const t of hostiles) {
+    const tgtCenter = t.center ?? { x: t.x, y: t.y };
+    let dist;
+    try {
+      const measured = grid?.measurePath?.([srcCenter, tgtCenter]);
+      dist = measured?.distance ?? null;
+      if (dist == null && typeof grid?.measureDistance === "function") {
+        dist = grid.measureDistance(srcCenter, tgtCenter);
+      }
+    } catch {
+      dist = null;
+    }
+    if (dist == null) {
+      const dx = tgtCenter.x - srcCenter.x;
+      const dy = tgtCenter.y - srcCenter.y;
+      const pixels = Math.hypot(dx, dy);
+      const size = grid?.size ?? 100;
+      dist = (pixels / size) * gridDist;
+    }
+    if (dist > maxDist) continue;
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = t;
+    }
+  }
+  return best;
 }
 
 export function getMountWeapons(actor, mountIndex) {

@@ -1,4 +1,4 @@
-import { MODULE_ID, suggestDefaultQueue, computeActionEconomy, getActorActions } from "./constants.mjs";
+import { MODULE_ID, suggestDefaultQueue, suggestForActor, computeActionEconomy, getActorActions } from "./constants.mjs";
 import { ActionQueueApp } from "./ActionQueueApp.mjs";
 import { HudApp, registerHudSettings } from "./HudApp.mjs";
 import { fireQueue, executeItem } from "./executor.mjs";
@@ -127,6 +127,7 @@ Hooks.once("init", () => {
     fireAction,
     getActorActions,
     suggestDefaultQueue,
+    suggestForActor,
     computeActionEconomy,
     queue: {
       get: getQueue,
