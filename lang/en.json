@@ -65,10 +65,9 @@
     "Suggest": {
       "Button": "Auto-suggest turn",
       "ConfirmTitle": "Replace Queue?",
-      "ConfirmReplace": "This combatant already has pending actions queued. Replace them with a fresh suggestion?",
+      "ConfirmReplace": "This will clear the current queue and replace it with a suggested turn. Continue?",
       "NoSuggestions": "No suggestions for this combatant's loadout",
-      "Applied": "Suggested {count} action(s)",
-      "AppliedTargeted": "Suggested {count} action(s), {targeted} auto-targeted"
+      "Applied": "Suggested {count} action(s)"
     },
     "Actions": {
       "skirmish": "Skirmish",

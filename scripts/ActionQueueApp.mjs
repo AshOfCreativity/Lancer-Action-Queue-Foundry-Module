@@ -1,4 +1,4 @@
-import { MODULE_ID, ACTION_CATALOG, ACTION_CATEGORIES, QUEUE_ITEM_STATUS, ACTION_COST, getActionDef, getActorActions, getItemCost, computeActionEconomy, suggestDefaultQueue, suggestForActor, getMountWeapons } from "./constants.mjs";
+import { MODULE_ID, ACTION_CATALOG, ACTION_CATEGORIES, QUEUE_ITEM_STATUS, ACTION_COST, getActionDef, getActorActions, getItemCost, computeActionEconomy, suggestDefaultQueue, getMountWeapons } from "./constants.mjs";
 import {
   getQueue,
   addItem,
@@ -761,8 +761,7 @@ export class ActionQueueApp extends Application {
     if (!actor) return;
 
     const existing = getQueue(holder);
-    const hasPending = existing.some(i => i.status === QUEUE_ITEM_STATUS.PENDING);
-    if (hasPending) {
+    if (existing.length > 0) {
       const confirmed = await Dialog.confirm({
         title: game.i18n.localize("ACTIONQUEUE.Suggest.ConfirmTitle"),
         content: `<p>${game.i18n.localize("ACTIONQUEUE.Suggest.ConfirmReplace")}</p>`
@@ -771,27 +770,16 @@ export class ActionQueueApp extends Application {
       await clearQueue(holder);
     }
 
-    // Prefer the combatant's own token (NPCs often have several on the scene;
-    // the combatant row tells us which one acts this turn).
-    const combatantToken = holder.token?.object ?? canvas?.tokens?.get(holder.tokenId) ?? null;
-    const suggestions = suggestForActor(actor, {
-      autoTarget: true,
-      pickRecharges: true,
-      includeProtocols: true,
-      tierAccuracy: true,
-      sourceToken: combatantToken
-    });
+    const suggestions = suggestDefaultQueue(actor);
     if (suggestions.length === 0) {
       ui.notifications.info(game.i18n.localize("ACTIONQUEUE.Suggest.NoSuggestions"));
       return;
     }
 
     for (const item of suggestions) {
-      await addItem(holder, item.actionId, { payload: item.payload, notes: item.notes ?? "" });
+      await addItem(holder, item.actionId, { payload: item.payload, notes: item.notes });
     }
-    const targeted = suggestions.filter(i => i.payload?.targetIds?.length).length;
-    const key = targeted > 0 ? "ACTIONQUEUE.Suggest.AppliedTargeted" : "ACTIONQUEUE.Suggest.Applied";
-    ui.notifications.info(game.i18n.format(key, { count: suggestions.length, targeted }));
+    ui.notifications.info(game.i18n.format("ACTIONQUEUE.Suggest.Applied", { count: suggestions.length }));
     this.render(false);
   }
 
