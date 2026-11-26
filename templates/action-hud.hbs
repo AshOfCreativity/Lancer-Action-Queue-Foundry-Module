@@ -1,69 +1,84 @@
-{{#if noActor}}
-<div class="ah-root ah-empty">
-  <span>Select a token to begin.</span>
-</div>
-{{else}}
-<div class="ah-root {{#if collapsed}}collapsed{{/if}}" data-actor-id="{{actorId}}">
-  <div class="ah-header">
-    <img class="ah-portrait" src="{{actorImg}}" alt="{{actorName}}" />
-    <div class="ah-identity">
-      <div class="ah-name">{{actorName}}</div>
-      <div class="ah-economy {{#if economy.overBudget}}over-budget{{/if}}">
-        {{economy.pointsUsed}}/{{economy.totalBudget}} AP{{#if economy.reactionsUsed}} · {{economy.reactionsUsed}} R{{/if}}{{#if economy.protocolsUsed}} · {{economy.protocolsUsed}} P{{/if}}
-      </div>
-    </div>
-    <div class="ah-header-ctrls">
-      <button class="ah-lock" title="{{#if locked}}Unlock to drag{{else}}Lock{{/if}}">
-        <i class="fas {{#if locked}}fa-lock{{else}}fa-lock-open{{/if}}"></i>
-      </button>
-      <button class="ah-collapse" title="{{#if collapsed}}Expand{{else}}Collapse{{/if}}">
-        <i class="fas {{#if collapsed}}fa-chevron-down{{else}}fa-chevron-up{{/if}}"></i>
-      </button>
-    </div>
-  </div>
+{{!-- single-root wrapper; _render stamps id="lancer-action-hud" on it --}}
+<div class="ah-wrapper {{#if collapsed}}ah-collapsed{{/if}} {{#if noActor}}ah-no-actor{{/if}}">
 
   {{#unless collapsed}}
-  <div class="ah-macros-row" title="Drag a macro here to add it">
+  <div class="ah-macros" title="Drag a macro here to add it. Click to run.">
     {{#each macros as |m|}}
     <div class="ah-macro" data-macro-id="{{m.id}}" title="{{m.name}}">
       <img src="{{m.img}}" alt="{{m.name}}" />
-      <span class="ah-macro-name">{{m.name}}</span>
-      {{#if ../locked}}{{else}}<button class="ah-macro-remove" title="Remove"><i class="fas fa-times"></i></button>{{/if}}
+      {{#unless ../locked}}<button class="ah-macro-remove" title="Remove"><i class="fas fa-times"></i></button>{{/unless}}
     </div>
     {{else}}
-    <div class="ah-macros-placeholder">Drag macros here</div>
-    {{/each}}
-  </div>
-
-  <div class="ah-body">
-    {{#each groups as |g|}}
-    <div class="ah-group" data-group="{{g.key}}">
-      <div class="ah-group-label">{{g.label}}</div>
-      <div class="ah-group-actions">
-        {{#each g.actions as |a|}}
-        <button class="ah-action" data-action-id="{{a.actionId}}" data-label="{{a.label}}" title="{{a.label}} (Shift-click to queue, right-click to open sheet)">
-          <i class="{{a.icon}}"></i>
-          <span>{{a.label}}</span>
-        </button>
-        {{/each}}
-      </div>
-    </div>
-    {{/each}}
-
-    {{#each standard as |g|}}
-    <div class="ah-group ah-standard" data-group="std-{{g.key}}">
-      <div class="ah-group-label">{{g.label}}</div>
-      <div class="ah-group-actions">
-        {{#each g.actions as |a|}}
-        <button class="ah-action" data-action-id="{{a.actionId}}" data-label="{{a.label}}" title="{{a.label}} (Shift-click to queue)">
-          <i class="{{a.icon}}"></i>
-          <span>{{a.label}}</span>
-        </button>
-        {{/each}}
-      </div>
-    </div>
+    <div class="ah-macros-empty">drag macros here</div>
     {{/each}}
   </div>
   {{/unless}}
+
+  <div class="ah-bar">
+    <div class="ah-drag" title="{{#if locked}}Locked{{else}}Drag to move{{/if}}">
+      <i class="fas fa-grip-vertical"></i>
+    </div>
+
+    {{#if noActor}}
+    <div class="ah-identity">
+      <div class="ah-name">No token</div>
+      <div class="ah-ap">select a token</div>
+    </div>
+    {{else}}
+    <img class="ah-portrait" src="{{actorImg}}" alt="{{actorName}}" />
+    <div class="ah-identity">
+      <div class="ah-name" title="{{actorName}}">{{actorName}}</div>
+      <div class="ah-ap {{#if economy.overBudget}}ah-over-budget{{/if}}">{{economyLine}} AP</div>
+    </div>
+
+    {{#unless collapsed}}
+    <div class="ah-chips">
+      {{#each categories as |c|}}
+      <button class="ah-chip {{c.openClass}}" data-cat="{{c.key}}" title="{{c.label}}">
+        <i class="{{c.icon}}"></i>
+        <span class="ah-chip-label">{{c.label}}</span>
+        <span class="ah-chip-count">{{c.count}}</span>
+      </button>
+      {{/each}}
+    </div>
+    {{/unless}}
+    {{/if}}
+
+    <div class="ah-controls">
+      {{#if hasPending}}
+      <span class="ah-pending-badge" title="{{pendingCount}} queued">{{pendingCount}}</span>
+      {{/if}}
+      <button class="ah-lock" title="{{#if locked}}Unlock{{else}}Lock{{/if}}"><i class="fas {{#if locked}}fa-lock{{else}}fa-lock-open{{/if}}"></i></button>
+      <button class="ah-collapse" title="{{#if collapsed}}Expand{{else}}Collapse{{/if}}"><i class="fas {{#if collapsed}}fa-chevron-up{{else}}fa-chevron-down{{/if}}"></i></button>
+      <button class="ah-close" title="Close HUD"><i class="fas fa-times"></i></button>
+    </div>
+  </div>
+
+  {{#if openCategory}}
+  <div class="ah-popover" data-cat="{{openCategory.key}}">
+    {{#if openCategory.isStandard}}
+      {{#each openCategory.sections as |s|}}
+      <div class="ah-section">
+        <div class="ah-section-label">{{s.label}}</div>
+        <div class="ah-section-actions">
+          {{#each s.actions as |a|}}
+          <button class="ah-action" data-action-id="{{a.actionId}}" data-label="{{a.label}}" title="{{a.label}}">
+            <i class="{{a.icon}}"></i><span>{{a.label}}</span>
+          </button>
+          {{/each}}
+        </div>
+      </div>
+      {{/each}}
+    {{else}}
+      <div class="ah-section-actions">
+        {{#each openCategory.actions as |a|}}
+        <button class="ah-action" data-action-id="{{a.actionId}}" data-label="{{a.label}}" title="{{a.label}}">
+          <i class="{{a.icon}}"></i><span>{{a.label}}</span>
+        </button>
+        {{/each}}
+      </div>
+    {{/if}}
+  </div>
+  {{/if}}
+
 </div>
-{{/if}}

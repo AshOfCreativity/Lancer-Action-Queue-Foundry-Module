@@ -17,18 +17,19 @@ export const HUD_SETTINGS = {
   COLLAPSED: "hudCollapsed"
 };
 
-const GROUP_DEFS = [
-  { key: "weapons",   label: "Weapons",          match: a => a.isWeapon || a.isMount },
-  { key: "systems",   label: "Systems & Gear",   match: a => a.id?.startsWith("system:") || a.id?.startsWith("gear:") },
-  { key: "tech",      label: "Tech",             match: a => a.id?.startsWith("tech:") },
-  { key: "reactions", label: "Reactions",        match: a => a.category === ACTION_CATEGORIES.REACTION || a.id?.startsWith("reaction:") },
-  { key: "deployables", label: "Deployables",    match: a => a.id?.startsWith("deployable:") }
+const CATEGORY_DEFS = [
+  { key: "weapons",     label: "Weapons",         icon: "fas fa-crosshairs",   match: a => a.isWeapon || a.isMount },
+  { key: "tech",        label: "Tech",            icon: "fas fa-wrench",       match: a => a.id?.startsWith("tech:") },
+  { key: "systems",     label: "Systems",         icon: "fas fa-microchip",    match: a => a.id?.startsWith("system:") || a.id?.startsWith("gear:") },
+  { key: "reactions",   label: "Reactions",       icon: "fas fa-bolt",         match: a => a.category === ACTION_CATEGORIES.REACTION || a.id?.startsWith("reaction:") },
+  { key: "deployables", label: "Deployables",     icon: "fas fa-rocket",       match: a => a.id?.startsWith("deployable:") }
 ];
 
-const STANDARD_GROUP_ORDER = [
+const STANDARD_SECTIONS = [
   { key: "quick",    label: "Quick",    category: ACTION_CATEGORIES.QUICK },
   { key: "full",     label: "Full",     category: ACTION_CATEGORIES.FULL },
   { key: "protocol", label: "Protocol", category: ACTION_CATEGORIES.PROTOCOL },
+  { key: "reaction", label: "Reaction", category: ACTION_CATEGORIES.REACTION },
   { key: "free",     label: "Free",     category: ACTION_CATEGORIES.FREE },
   { key: "other",    label: "Other",    category: ACTION_CATEGORIES.OTHER }
 ];
@@ -57,6 +58,8 @@ function resolveHolder(token, actor) {
 export class HudApp extends Application {
   constructor(options = {}) {
     super(options);
+    this._openCategory = null;
+    this._docClickHandler = null;
   }
 
   static get defaultOptions() {
@@ -69,8 +72,6 @@ export class HudApp extends Application {
     });
   }
 
-  // Override Foundry's default mount point so the HUD floats on <body>
-  // rather than taking a slot in the main UI tree.
   async _render(force = false, options = {}) {
     const data = await this.getData();
     const html = $(await renderTemplate(this.options.template, data));
@@ -79,6 +80,7 @@ export class HudApp extends Application {
     const existing = document.getElementById(this.options.id);
     if (existing) existing.remove();
 
+    this._unbindDocClick();
     document.body.appendChild(html[0]);
     this._element = html;
     this._state = Application.RENDER_STATES.RENDERED;
@@ -87,10 +89,12 @@ export class HudApp extends Application {
   }
 
   async close(options = {}) {
+    this._unbindDocClick();
     const el = document.getElementById(this.options.id);
     if (el) el.remove();
     this._element = null;
     this._state = Application.RENDER_STATES.CLOSED;
+    this._openCategory = null;
   }
 
   get rendered() {
@@ -100,21 +104,40 @@ export class HudApp extends Application {
   getData() {
     const { token, actor } = resolveSelectedActor();
     if (!actor) {
-      return { noActor: true, position: this._readPosition(), locked: this._isLocked(), collapsed: this._isCollapsed() };
+      return {
+        noActor: true,
+        macros: this._getMacroData(),
+        position: this._readPosition(),
+        locked: this._isLocked(),
+        collapsed: this._isCollapsed()
+      };
     }
 
     const holder = resolveHolder(token, actor);
     const queue = holder?.getFlag ? getQueue(holder) : [];
     const economy = computeActionEconomy(queue, actor);
-
-    const macros = this._readMacros()
-      .map(id => game.macros.get(id))
-      .filter(m => m != null)
-      .map(m => ({ id: m.id, name: m.name, img: m.img || "icons/svg/dice-target.svg" }));
+    const pending = queue.filter(i => i.status === "pending");
 
     const actorActions = getActorActions(actor);
-    const groups = this._buildGroups(actorActions);
-    const standard = this._buildStandardGroups();
+    const categories = this._buildCategories(actorActions);
+    const standard = this._buildStandardSections();
+    categories.push({
+      key: "actions",
+      label: "Actions",
+      icon: "fas fa-dice-d20",
+      count: standard.reduce((n, s) => n + s.actions.length, 0),
+      sections: standard,
+      isStandard: true
+    });
+
+    let openCategory = null;
+    if (this._openCategory) {
+      openCategory = categories.find(c => c.key === this._openCategory) || null;
+    }
+    const filteredCats = categories.filter(c => c.count > 0);
+    for (const c of filteredCats) {
+      c.openClass = (openCategory && c.key === openCategory.key) ? "ah-chip-open" : "";
+    }
 
     return {
       noActor: false,
@@ -122,19 +145,29 @@ export class HudApp extends Application {
       actorName: actor.name,
       actorImg: actor.img || "icons/svg/mystery-man.svg",
       economy,
-      macros,
-      groups,
-      standard,
+      economyLine: `${economy.pointsUsed}/${economy.totalBudget}`,
+      pendingCount: pending.length,
+      hasPending: pending.length > 0,
+      macros: this._getMacroData(),
+      categories: filteredCats,
+      openCategory,
       position: this._readPosition(),
       locked: this._isLocked(),
       collapsed: this._isCollapsed()
     };
   }
 
-  _buildGroups(actorActions) {
+  _getMacroData() {
+    return this._readMacros()
+      .map(id => game.macros.get(id))
+      .filter(m => m != null)
+      .map(m => ({ id: m.id, name: m.name, img: m.img || "icons/svg/dice-target.svg" }));
+  }
+
+  _buildCategories(actorActions) {
     const unassigned = [...actorActions];
-    const groups = [];
-    for (const def of GROUP_DEFS) {
+    const out = [];
+    for (const def of CATEGORY_DEFS) {
       const bucket = [];
       for (let i = unassigned.length - 1; i >= 0; i--) {
         if (def.match(unassigned[i])) {
@@ -142,22 +175,24 @@ export class HudApp extends Application {
           unassigned.splice(i, 1);
         }
       }
-      if (bucket.length > 0) {
-        groups.push({
-          key: def.key,
-          label: def.label,
-          actions: bucket.map(a => this._actionButton(a))
-        });
-      }
+      out.push({
+        key: def.key,
+        label: def.label,
+        icon: def.icon,
+        count: bucket.length,
+        actions: bucket.map(a => this._actionButton(a))
+      });
     }
     if (unassigned.length > 0) {
-      groups.push({
-        key: "other",
+      out.push({
+        key: "other-actor",
         label: "Other",
+        icon: "fas fa-cog",
+        count: unassigned.length,
         actions: unassigned.map(a => this._actionButton(a))
       });
     }
-    return groups;
+    return out;
   }
 
   _actionButton(a) {
@@ -169,18 +204,18 @@ export class HudApp extends Application {
     };
   }
 
-  _buildStandardGroups() {
+  _buildStandardSections() {
     const out = [];
-    for (const g of STANDARD_GROUP_ORDER) {
+    for (const section of STANDARD_SECTIONS) {
       const actions = ACTION_CATALOG
-        .filter(a => a.category === g.category)
+        .filter(a => a.category === section.category)
         .map(a => ({
           actionId: a.id,
           label: this._localizeAction(a.id),
           icon: a.icon
         }));
       if (actions.length === 0) continue;
-      out.push({ key: g.key, label: g.label, actions });
+      out.push({ key: section.key, label: section.label, actions });
     }
     return out;
   }
@@ -191,63 +226,67 @@ export class HudApp extends Application {
     return txt === key ? id.replace(/\b\w/g, c => c.toUpperCase()) : txt;
   }
 
-  _readMacros() {
-    return game.settings.get(MODULE_ID, HUD_SETTINGS.MACROS) || [];
-  }
-
-  async _writeMacros(ids) {
-    await game.settings.set(MODULE_ID, HUD_SETTINGS.MACROS, ids);
-  }
-
-  _readPosition() {
-    return game.settings.get(MODULE_ID, HUD_SETTINGS.POSITION) || { x: 80, y: null, bottom: 80 };
-  }
-
-  async _writePosition(pos) {
-    await game.settings.set(MODULE_ID, HUD_SETTINGS.POSITION, pos);
-  }
-
-  _isLocked() {
-    return game.settings.get(MODULE_ID, HUD_SETTINGS.LOCKED) ?? false;
-  }
-
-  async _toggleLocked() {
-    await game.settings.set(MODULE_ID, HUD_SETTINGS.LOCKED, !this._isLocked());
-  }
-
-  _isCollapsed() {
-    return game.settings.get(MODULE_ID, HUD_SETTINGS.COLLAPSED) ?? false;
-  }
-
-  async _toggleCollapsed() {
-    await game.settings.set(MODULE_ID, HUD_SETTINGS.COLLAPSED, !this._isCollapsed());
-  }
+  _readMacros() { return game.settings.get(MODULE_ID, HUD_SETTINGS.MACROS) || []; }
+  async _writeMacros(ids) { await game.settings.set(MODULE_ID, HUD_SETTINGS.MACROS, ids); }
+  _readPosition() { return game.settings.get(MODULE_ID, HUD_SETTINGS.POSITION) || { x: 80, y: null, bottom: 80 }; }
+  async _writePosition(pos) { await game.settings.set(MODULE_ID, HUD_SETTINGS.POSITION, pos); }
+  _isLocked() { return game.settings.get(MODULE_ID, HUD_SETTINGS.LOCKED) ?? false; }
+  async _toggleLocked() { await game.settings.set(MODULE_ID, HUD_SETTINGS.LOCKED, !this._isLocked()); }
+  _isCollapsed() { return game.settings.get(MODULE_ID, HUD_SETTINGS.COLLAPSED) ?? false; }
+  async _toggleCollapsed() { await game.settings.set(MODULE_ID, HUD_SETTINGS.COLLAPSED, !this._isCollapsed()); }
 
   activateListeners(html) {
     super.activateListeners(html);
 
-    // Apply saved position to the floating container
-    const el = html[0]?.closest("#lancer-action-hud") || html[0];
-    if (el) {
+    const root = html[0];
+    if (root) {
       const pos = this._readPosition();
-      if (pos.x != null) el.style.left = `${pos.x}px`;
-      if (pos.y != null) { el.style.top = `${pos.y}px`; el.style.bottom = "auto"; }
-      else if (pos.bottom != null) { el.style.bottom = `${pos.bottom}px`; el.style.top = "auto"; }
+      if (pos.x != null) root.style.left = `${pos.x}px`;
+      if (pos.y != null) { root.style.top = `${pos.y}px`; root.style.bottom = "auto"; }
+      else if (pos.bottom != null) { root.style.bottom = `${pos.bottom}px`; root.style.top = "auto"; }
     }
 
+    html.find(".ah-chip").on("click", this._onToggleCategory.bind(this));
     html.find(".ah-action").on("click", this._onClickAction.bind(this));
     html.find(".ah-action").on("contextmenu", this._onRightClickAction.bind(this));
     html.find(".ah-macro").on("click", this._onClickMacro.bind(this));
     html.find(".ah-macro-remove").on("click", this._onRemoveMacro.bind(this));
     html.find(".ah-lock").on("click", () => this._toggleLocked().then(() => this.render(false)));
     html.find(".ah-collapse").on("click", () => this._toggleCollapsed().then(() => this.render(false)));
+    html.find(".ah-close").on("click", () => this.close());
 
     this._bindMacroDrop(html);
     this._bindDrag(html);
+    if (this._openCategory) this._bindDocClick();
+  }
+
+  _bindDocClick() {
+    this._unbindDocClick();
+    this._docClickHandler = ev => {
+      if (!this._element) return;
+      if (this._element[0].contains(ev.target)) return;
+      this._openCategory = null;
+      this.render(false);
+    };
+    setTimeout(() => document.addEventListener("mousedown", this._docClickHandler), 0);
+  }
+
+  _unbindDocClick() {
+    if (this._docClickHandler) {
+      document.removeEventListener("mousedown", this._docClickHandler);
+      this._docClickHandler = null;
+    }
+  }
+
+  _onToggleCategory(ev) {
+    ev.preventDefault();
+    const key = ev.currentTarget.dataset.cat;
+    this._openCategory = this._openCategory === key ? null : key;
+    this.render(false);
   }
 
   _bindMacroDrop(html) {
-    const row = html.find(".ah-macros-row")[0];
+    const row = html.find(".ah-macros")[0];
     if (!row) return;
     row.addEventListener("dragover", ev => {
       ev.preventDefault();
@@ -272,8 +311,8 @@ export class HudApp extends Application {
 
   _bindDrag(html) {
     if (this._isLocked()) return;
-    const handle = html.find(".ah-header")[0];
-    const container = html[0]?.closest("#lancer-action-hud") || html[0];
+    const handle = html.find(".ah-drag")[0];
+    const container = html[0];
     if (!handle || !container) return;
     handle.style.cursor = "move";
     handle.addEventListener("mousedown", ev => {
@@ -316,6 +355,8 @@ export class HudApp extends Application {
     const item = { id: foundry.utils.randomID(), actionId, payload, status: "pending" };
     try {
       await executeItem(holder || { actor }, item);
+      this._openCategory = null;
+      this.render(false);
     } catch (err) {
       console.error(`${MODULE_ID} | HUD fire failed`, err);
       ui.notifications.error(`Action failed: ${err?.message || err}`);
